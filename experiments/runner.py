@@ -137,12 +137,12 @@ def main():
         return
 
     if args.benchmark:
-        from realeval.benchmark import benchmark_forward, benchmark_summary
+        from realeval.benchmark import benchmark, summary
         import torch
         import torch.nn as nn
         model = nn.Sequential(nn.Linear(64, 128), nn.ReLU(), nn.Linear(128, 2))
-        r = benchmark_forward(model, torch.randn(64), warmup=10, repeat=100, batch_sizes=(1, 16, 64))
-        s = benchmark_summary(r)
+        r = benchmark(model, torch.randn(64), warmup=10, repeat=100, batch_sizes=(1, 16, 64))
+        s = summary(r)
         print("Benchmark summary:", s)
         return
 
@@ -163,8 +163,10 @@ def main():
         logger.error("Config validation failed: %s", e)
         sys.exit(1)
 
-    # Environment report
+    # Environment report + audit log
     envreport.write_report()
+    from realeval.audit import log_environment
+    log_environment(config)
 
     # Resolve experiment selection
     if args.exp is not None:

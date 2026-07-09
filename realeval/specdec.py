@@ -11,7 +11,7 @@ logger = logging.getLogger("specdec")
 def diagnostic_B(config: dict, texts: list[str], *, gamma=5, n_samples=20) -> dict:
     """Diagnostic B: compute alpha from token counts (paper Table 8 consistency check).
 
-    Returns dict with alpha_from_tokens, paper_tokens, table8_alpha, table8_tokens_would_be, verdict.
+    Returns dict with h100_measured, h100_tokens, v25_table8_alpha, v25_table8_tokens, verdict.
     """
     from realeval import models, hwenv
     import torch
@@ -61,16 +61,38 @@ def diagnostic_B(config: dict, texts: list[str], *, gamma=5, n_samples=20) -> di
     def _tokens(a):
         return round((1 - a ** (gamma + 1)) / (1 - a), 2) if a < 1 else gamma + 1
 
-    # The generic draft's alpha is MEASURED from real tokens above.
-    # The domain-tuned draft requires a separately fine-tuned model; when not loaded,
-    # it is reported as not_measured (no hardcoded paper fallback).
-    result = {
-        "alpha_generic_measured": gen_alpha,
-        "alpha_domain": None,  # must be measured with actual domain-tuned draft model
-        "paper_tokens_generic": _tokens(gen_alpha),
-        "gamma": gamma,
-        "n_samples": n_samples,
-        "accepted": accepted,
-        "proposed": proposed,
+    # ── H100 measured values (authoritative) ──
+    # The generic draft's alpha is measured from real H100 tokens above.
+    # The domain-tuned draft would require separate fine-tuned model loading.
+    # domain-tuned draft alpha NOT hardcoded
+    h100_measured = {"generic": gen_alpha}
+    h100_tokens = {"generic": _tokens(gen_alpha)}
+
+    # ── v25 paper Table 8 values (historical reference only) ──
+    # These values (0.85/0.91) are from the v25 manuscript and may differ from H100 measurements.
+    v25_table8_alpha = {"generic": 0.85}
+    v25_table8_tokens = {"generic": _tokens(0.85)}
+
+    # Verdict: H100 measured alpha is ground truth.
+    verdict_data = {}
+    if gen_alpha is not None:
+        v25_ref = v25_table8_alpha.get("generic", 0.85)
+        diff = abs(gen_alpha - v25_ref)
+        if diff >= 0.05:
+            verdict_data["generic"] = (
+                f"H100 measured generic alpha={gen_alpha} differs from "
+                f"v25 Table 8's {v25_ref} (diff={diff:.3f})")
+        else:
+            verdict_data["generic"] = (
+                f"H100 measured generic alpha={gen_alpha} is consistent "
+                f"with v25 Table 8's {v25_ref}")
+    verdict_data["domain"] = "NOT MEASURED"
+    verdict = "; ".join(verdict_data.values())
+
+    return {
+        "h100_measured": h100_measured,
+        "h100_tokens": h100_tokens,
+        "v25_table8_alpha": v25_table8_alpha,
+        "v25_table8_tokens": v25_table8_tokens,
+        "verdict": verdict,
     }
-    return result

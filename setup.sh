@@ -27,7 +27,7 @@ pip install --upgrade pip
 pip install -e .
 
 # Create output directories
-mkdir -p outputs/results
+mkdir -p outputs/predictions outputs/metrics outputs/statistics outputs/figures outputs/tables outputs/logs outputs/results
 
 echo "=== Setup complete ==="
 echo "Run experiments: python -m experiments.runner --smoke"

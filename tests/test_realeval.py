@@ -17,22 +17,30 @@ class TestRunner:
 
 class TestBenchmark:
     def test_benchmark_forward_cpu(self):
-        from realeval.benchmark import benchmark_forward, benchmark_summary
+        from realeval.runner import run_forward_benchmark, best_batch_size
         import torch, torch.nn as nn
         model = nn.Sequential(nn.Linear(64, 128), nn.ReLU(), nn.Linear(128, 2))
-        r = benchmark_forward(model, torch.randn(64), warmup=2, repeat=10, batch_sizes=(1, 16))
+        r = run_forward_benchmark(model, torch.randn(64), warmup=2, repeat=10, batch_sizes=(1, 16))
         assert 16 in r
         assert r[16]["throughput_sps"] is not None
         assert r[1]["latency_p50_ms"] > 0
-        s = benchmark_summary(r)
+        s = best_batch_size(r)
         assert "best_batch_size" in s
 
     def test_benchmark_metrics_fields(self):
-        from realeval.benchmark import benchmark_forward
+        from realeval.runner import run_forward_benchmark
         import torch, torch.nn as nn
-        r = benchmark_forward(nn.Linear(32, 2), torch.randn(32), warmup=1, repeat=5, batch_sizes=(1,))
+        r = run_forward_benchmark(nn.Linear(32, 2), torch.randn(32), warmup=1, repeat=5, batch_sizes=(1,))
         for k in ("throughput_sps", "latency_p50_ms", "latency_p99_ms", "device"):
             assert k in r[1]
+
+    def test_benchmark_csv(self):
+        from realeval.benchmark import benchmark
+        import torch, torch.nn as nn
+        r = benchmark(nn.Linear(32, 2), torch.randn(32), warmup=1, repeat=5, batch_sizes=(1,), save_csv=False)
+        for k in ("throughput_sps", "latency_p50_ms", "latency_p99_ms", "device"):
+            assert k in r[1]
+
 
 class TestDistributed:
     def test_distributed_noop(self):
@@ -155,13 +163,9 @@ class TestRunLog:
 
 
 class TestAudit:
-    def test_log_event(self):
-        from realeval.audit import log_event
-        log_event("test_event", detail="testing")  # should not crash
-
-    def test_log_error(self):
-        from realeval.audit import log_error
-        log_error("test_exp", ValueError("test error"))  # should not crash
+    def test_log_environment(self):
+        from realeval.audit import log_environment
+        log_environment()  # should not crash
 
 
 class TestPrivacy:
@@ -178,7 +182,7 @@ class TestExperiments:
         "exp4_baseline_comparison", "exp5_cross_dataset", "exp6_speculative_decoding",
         "exp7_privacy_verification", "exp8_latency_benchmark", "exp9_cot_ablation",
         "exp10_teacher_scale", "exp11_quantization_scheme", "exp12_fraudfusion_baseline",
-        "exp13_fusion_strategy",
+        "exp13_fusion_strategy", "exp14_gguf_comparison",
     ])
     def test_experiment_smoke(self, exp_name):
         mod = __import__(f"experiments.{exp_name}", fromlist=["run"])
@@ -207,12 +211,12 @@ def test_all_experiments_smoke(modname):
 
 
 def test_privacy_empty_data_guards():
-    """asv_eer_open_set / speaker_identification degrade gracefully when no speaker has >=2 utterances."""
+    """asv_eer / speaker_identification degrade gracefully when no speaker has >=2 utterances."""
     import numpy as np
-    from realeval.privacy import asv_eer_open_set, speaker_identification
+    from realeval.privacy import asv_eer, speaker_identification
     embs = [np.random.RandomState(0).randn(64) for _ in range(3)]
     spks = ["a", "b", "c"]  # all singletons
-    assert asv_eer_open_set(embs, spks).get("asv_eer_pct") is None
+    assert "note" in asv_eer(embs, spks)
     assert "note" in speaker_identification(embs, spks)
 
 

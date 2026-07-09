@@ -71,4 +71,9 @@ def save_results(exp_short: str, result: dict) -> Path:
     ts = datetime.now().strftime("%Y%m%d_%H%M%S")
     path = _ensure_results_dir() / f"{exp_short}_{ts}.json"
     path.write_text(json.dumps(result, ensure_ascii=False, indent=2, default=str), encoding="utf-8")
+    # Also save a copy to predictions/ for the Dataset->Prediction chain
+    pred_dir = ROOT / "outputs" / "predictions"
+    pred_dir.mkdir(parents=True, exist_ok=True)
+    pred_path = pred_dir / f"{exp_short}_{ts}.json"
+    pred_path.write_text(path.read_text(encoding="utf-8"), encoding="utf-8")
     return path

@@ -17,8 +17,7 @@ from datetime import datetime
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
-OUT = ROOT / "outputs"
-RUNLOG = OUT / "runlog.jsonl"
+RUNLOG = ROOT / "outputs" / "logs" / "runlog.jsonl"
 
 logger = logging.getLogger("runlog")
 
