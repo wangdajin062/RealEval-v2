@@ -1,0 +1,25 @@
+# H100 paper-validation config (overlays config/experiments.yaml).
+# Used by: bash run_h100.sh --paper   /   torchrun --nproc_per_node=8 -m experiments.paper_pipeline
+
+hardware:
+  gpu: H100
+  num_gpu: 8
+  precision: bf16
+  use_flash_attn: true       # FlashAttention-2
+  use_torch_compile: false   # enable if the model+driver combo is stable
+  ddp: true                  # NCCL multi-GPU
+
+runtime:
+  flash_attention: true
+  distributed: true
+  cuda_visible_devices: "0,1,2,3,4,5,6,7"
+  nccl: true
+
+output:
+  paper_mode: true
+  results_dir: results
+  emit_latex: true
+  emit_csv: true
+
+# Model/data/distillation settings are inherited from config/experiments.yaml
+# (homologous 0.5B self-distillation; Q4_K_M edge / NVFP4 cloud).

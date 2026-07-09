@@ -1,0 +1,99 @@
+# RealEval Experiment Configuration
+# This file defines the default experiment configuration.
+# Override via CLI: python -m experiments.runner exp1 --config /path/to/custom.yaml
+
+models:
+  # Homologous self-distillation (paper v25 Sec 4.4): teacher = student = backbone = Qwen2.5-0.5B-Instruct.
+  # A BF16 teacher supervises the SAME 0.5B architecture quantised to low-bit (Q4_K_M edge / NVFP4 cloud).
+  teacher: "Qwen/Qwen2.5-0.5B-Instruct"        # BF16 homologous teacher
+  student: "Qwen/Qwen2.5-0.5B-Instruct"        # same architecture, quantised student
+  draft_model: "Qwen/Qwen2-0.5B"               # speculative-decoding draft (exp6); paper spec is a
+                                               # 124M Qwen2-0.1B, substituted here with the official Qwen2-0.5B
+  # Teacher-scale ablation (exp10 / Fig 6b): tested as teachers to justify the homologous 0.5B choice.
+  teacher_1.5b: "Qwen/Qwen2.5-1.5B-Instruct"
+  teacher_7b:   "Qwen/Qwen2.5-7B-Instruct"     # also the SAFE-QAQ 7B comparison baseline (BF16, unquantised)
+  # Edge deployment GGUF: 0.5B Q4_K_M (~240 MB) — the on-device student format (paper line 200).
+  student_gguf: "Qwen/Qwen2.5-0.5B-Instruct-GGUF"
+
+data:
+  source: auto       # data source mode: auto, taf28k, synthetic (also configurable via REALEVAL_DATA__SOURCE env)
+  max_samples: 4000  # max samples per dataset (None = all)
+
+training:
+  batch_size: 16
+  learning_rate: 5e-5
+  epochs: 3
+  freeze_ov: true
+  quantize: "int4"  # fp16, int8, int4, nf4
+
+distillation:
+  temperature: 2.0
+  alpha_ce: 0.5
+  alpha_kl: 0.5
+
+hardware:
+  use_flash_attn: true
+  use_torch_compile: false
+  ddp: false
+
+# ── Reproducibility ──
+reproducibility:
+  seed: 42
+  benchmark_warmup: 10
+  benchmark_repeat: 100
+  benchmark_batch_sizes: [1, 8, 32]
+
+# ── Privacy evaluation ──
+privacy:
+  delta: 1.0e-5
+  sensitivity: 1.0
+  noise_multiplier: 1.0
+  clip_bound: 3.0
+  open_set_enroll_utt: 3
+  glo_attack_steps: 150
+  glo_max_targets: 30
+  speaker_id_hidden_layers: [256, 128]
+  speaker_id_max_iter: 300
+  asv_thresholds: 400
+
+# ── Distillation ──
+distillation:
+  temperature: 2.0
+  alpha_ce: 0.5
+  alpha_kl: 0.5
+  max_batch: 16
+  max_seq_length: 256
+  freeze_frac_default: 1.0
+  window_default: 1.0
+
+# ── Speculative decoding ──
+speculative_decoding:
+  gamma: 5
+  n_samples: 20
+  max_new_tokens: 40
+
+# ── Classification ──
+classification:
+  n_estimators: 100
+  max_iter: 1000
+  verification_n_features: 128
+  verification_overlap: 0.9
+
+# ── LLM inference ──
+inference:
+  max_context: 2048
+  max_tokens: 4
+  cot_temperature: 0.0
+
+# ── Synthetic data ──
+synthetic:
+  n_default: 200
+  n_features: 128
+
+# ── Audio ──
+audio:
+  sample_rate: 16000
+  mel_bins: 64
+  hop_length: 160
+  mfcc_dim: 64
+  whisper_proj_dim: 64

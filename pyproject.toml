@@ -1,0 +1,86 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "H100_package_realeval4"
+version = "4.0.0"
+description = "Real Computation Library — QAD-MultiGuard H100 real evaluation suite (v4 integrated: A-main + B-enhancements)"
+readme = "README.md"
+license = {text = "MIT"}
+requires-python = ">=3.10"
+authors = [
+    {name = "QAD-MultiGuard Team"},
+]
+keywords = ["machine-learning", "distillation", "privacy", "evaluation", "h100"]
+classifiers = [
+    "Development Status :: 4 - Beta",
+    "Intended Audience :: Science/Research",
+    "Topic :: Scientific/Engineering :: Artificial Intelligence",
+    "License :: OSI Approved :: MIT License",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
+]
+
+dependencies = [
+    "torch>=2.1.0",
+    "numpy>=1.24",
+    "scikit-learn>=1.3",
+    "pyyaml>=6.0",
+    "transformers>=4.36",
+    "matplotlib>=3.7",
+]
+
+[project.optional-dependencies]
+test = [
+    "pytest>=7.4",
+    "datasets>=2.14",
+]
+paper = [
+    "flash-attn>=2.0",
+    "bitsandbytes>=0.43",
+]
+dev = [
+    "realeval[test,paper]",
+    "pytest-cov>=4",
+    "ruff>=0.3",
+]
+
+[project.urls]
+Homepage = "https://github.com/wangdajin062/H100_package_realeval"
+Documentation = "https://github.com/wangdajin062/H100_package_realeval"
+
+[project.scripts]
+realeval-run = "experiments.runner:main"
+
+[tool.setuptools.packages.find]
+include = ["realeval*", "experiments*"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+python_files = ["test_*.py"]
+python_classes = ["Test*"]
+python_functions = ["test_*"]
+log_cli = true
+log_cli_level = "INFO"
+markers = [
+    "slow: marks tests as slow (deselect with '-m \"not slow\"')",
+    "h100: marks tests requiring H100 GPU",
+]
+addopts = "-v --tb=short"
+
+[tool.ruff]
+line-length = 120
+target-version = "py310"
+extend-select = ["I"]
+ignore = ["E501"]
+
+[tool.ruff.lint.per-file-ignores]
+"tests/*" = ["D"]
+
+[tool.coverage.run]
+source = ["realeval", "experiments"]
+omit = ["*/tests/*"]

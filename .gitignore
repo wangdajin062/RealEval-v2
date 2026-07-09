@@ -1,0 +1,38 @@
+# Python
+__pycache__/
+.pytest_cache/
+*.py[cod]
+*.egg-info/
+dist/
+build/
+
+# Outputs
+outputs/
+*.jsonl
+
+# Environment
+.env
+venv/
+.venv/
+
+# IDE
+.vscode/
+.idea/
+*.code-workspace
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Data
+data/*.npz
+data/*.jsonl
+*.wav
+*.csv
+!data/**/.gitkeep
+
+# Models
+models/
+
+# Application / review artifacts
+*findings.json
