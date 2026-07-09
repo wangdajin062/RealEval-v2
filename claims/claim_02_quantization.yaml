@@ -1,0 +1,13 @@
+id: CLAIM-02
+hypothesis: "INT4 quantisation preserves F1 within 1 point of the fp16 scheme."
+experiment: exp11
+evidence_path: [schemes]
+independent_variable: quant_scheme
+dependent_variable: f1
+control: [dataset, seed]
+compare:
+  treatment: int4
+  baseline: fp16
+acceptance:
+  - "f1_drop <= 0.01"       # F1 drop under 1 point
+seeds: 5

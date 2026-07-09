@@ -213,10 +213,10 @@ def test_all_experiments_smoke(modname):
 def test_privacy_empty_data_guards():
     """asv_eer / speaker_identification degrade gracefully when no speaker has >=2 utterances."""
     import numpy as np
-    from realeval.privacy import asv_eer, speaker_identification
+    from realeval.privacy import asv_eer_open_set, speaker_identification
     embs = [np.random.RandomState(0).randn(64) for _ in range(3)]
     spks = ["a", "b", "c"]  # all singletons
-    assert "note" in asv_eer(embs, spks)
+    assert "note" in asv_eer_open_set(embs, spks)
     assert "note" in speaker_identification(embs, spks)
 
 

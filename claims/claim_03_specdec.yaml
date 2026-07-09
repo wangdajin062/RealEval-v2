@@ -1,0 +1,11 @@
+id: CLAIM-03
+hypothesis: "Speculative decoding with the measured acceptance rate yields >2x token speedup."
+experiment: exp6
+evidence_path: [diagnostic_B, measured, generic]
+independent_variable: draft_model
+dependent_variable: speedup
+control: [gamma, dataset]
+acceptance:
+  - "speedup > 2.0"
+  - "measured_alpha is not None"   # UNSUPPORTED if nothing was measured (sandbox)
+seeds: 1

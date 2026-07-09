@@ -59,7 +59,7 @@ def run(config: dict) -> dict:
             base = seq.shape[0]
             ok = 0
             for i, tk in enumerate(dtoks):
-                pt = float(F.softmax(tlog[base + i - 1], -1)[tk])
+                pt = float(F.softmax(tlog[base + i], -1)[tk])
                 if pt / (dprobs[i] + 1e-9) >= 0.5:
                     ok += 1
                 else:

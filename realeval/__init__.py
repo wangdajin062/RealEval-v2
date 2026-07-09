@@ -5,4 +5,4 @@ Restructured for paper-grade experiment authenticity.
 Modules: real_backend, metrics, statistics, audit, benchmark, runner, report, data, models, privacy, specdec, gguf_backend
 """
 
-__version__ = "4.1.0"
+__version__ = "4.2.0"

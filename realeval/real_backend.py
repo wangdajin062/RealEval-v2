@@ -11,6 +11,7 @@ Real computation:
 """
 from __future__ import annotations
 import logging
+import time
 
 logger = logging.getLogger("real_backend")
 
@@ -39,6 +40,22 @@ def run_paper_safe(smoke, config, paper_fn):
             raise
         return None
 
+
+
+def paper_ready(smoke: bool):
+    """Decorator for experiment paper paths: catches AssetsUnavailable and falls back to smoke path."""
+    def decorator(func):
+        import functools
+        @functools.wraps(func)
+        def wrapper(*args, **kwargs):
+            try:
+                return func(*args, **kwargs)
+            except AssetsUnavailable:
+                if not smoke:
+                    raise
+                return None
+        return wrapper
+    return decorator
 
 # ─────────────────── Real Distillation (exp1/exp2/exp3) ───────────────────
 def real_distillation_step_metrics(config: dict, texts: list[str], *, freeze_ov: bool,
@@ -186,6 +203,39 @@ def real_llm_classify(config: dict, texts: list[str], labels: list[int], *, quan
     if return_preds:
         m = dict(m); m["preds"] = preds
     return m
+
+
+def real_forward_latency(config: dict, *, quantize="int4", n=30, use_cot=True):
+    """Real forward wall-clock latency measurement on H100 (exp8).
+
+    Loads the teacher model, runs n forward passes with a fixed prompt, and returns
+    p50/p99/mean latency in milliseconds. CoT mode repeats the prompt 3x to simulate
+    longer sequences.
+    """
+    from realeval import models, hwenv
+    import torch
+    _require(models.models_available(config), "Real Qwen weights unavailable")
+    model, tok = models.load_causal_lm(config["models"]["teacher"], quantize=quantize, bf16=True)
+    _require(model is not None, "Model loading failed")
+    dev = next(model.parameters()).device
+    prompt = "Hello this is the police your account is involved in money laundering please cooperate" * (3 if use_cot else 1)
+    enc = tok(prompt, return_tensors="pt").to(dev)
+    with torch.no_grad(), hwenv.autocast_context():
+        model(**enc)
+    if getattr(dev, "type", str(dev)) == "cuda":
+        torch.cuda.synchronize()
+    lat = []
+    for _ in range(n):
+        t0 = time.perf_counter()
+        with torch.no_grad(), hwenv.autocast_context():
+            model(**enc)
+        if getattr(dev, "type", str(dev)) == "cuda":
+            torch.cuda.synchronize()
+        lat.append((time.perf_counter() - t0) * 1000)
+    import numpy as np
+    return {"p50_ms": round(float(np.percentile(lat, 50)), 2),
+            "p99_ms": round(float(np.percentile(lat, 99)), 2),
+            "mean_ms": round(float(np.mean(lat)), 2), "device": dev, "quantize": quantize}
 
 
 def real_fusion_classify(config, texts, labels, audio_emb, *, quantize="int4", fusion_strategy="early"):

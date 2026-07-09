@@ -40,6 +40,21 @@ def _fmt(v):
     return "-" if v is None else str(v)
 
 
+def _flatten_metrics(r: dict, prefix: str = "", depth: int = 0):
+    """Recursively extract scalar metrics from nested result dicts (max depth 3)."""
+    if depth > 3:
+        return
+    for k, v in r.items():
+        if k in ("experiment", "computation", "path", "is_synthetic"):
+            continue
+        full_key = f"{prefix}.{k}" if prefix else k
+        if isinstance(v, (dict, list)):
+            if isinstance(v, dict):
+                yield from _flatten_metrics(v, full_key, depth + 1)
+        else:
+            yield (full_key, v)
+
+
 def build_summary_csv() -> Path:
     """Export summary.csv from pre-computed results. No metric computation."""
     METRICS.mkdir(parents=True, exist_ok=True)
@@ -47,14 +62,20 @@ def build_summary_csv() -> Path:
     rows = []
     for exp in sorted(results):
         r = results[exp]
-        row = {"experiment": r.get("experiment", exp), "computation": r.get("computation", "?")}
-        for k, v in r.items():
-            if k in ("experiment", "computation", "path", "is_synthetic"):
-                continue
-            if not isinstance(v, (dict, list)):
-                row["metric"] = k
-                row["value"] = v
-                rows.append(dict(row))
+        base = {"experiment": r.get("experiment", exp), "computation": r.get("computation", "?")}
+        found = False
+        for metric_name, value in _flatten_metrics(r):
+            row = dict(base)
+            row["metric"] = metric_name
+            row["value"] = value
+            rows.append(row)
+            found = True
+        if not found:
+            # No scalar metrics found; emit a placeholder so the experiment is not missing
+            row = dict(base)
+            row["metric"] = "-"
+            row["value"] = "-"
+            rows.append(row)
     with open(METRICS / "summary.csv", "w", newline="", encoding="utf-8") as f:
         w = csv.DictWriter(f, fieldnames=["experiment", "computation", "metric", "value"])
         w.writeheader()
@@ -81,8 +102,6 @@ def build_paper_tables() -> Path:
                 lines.append(f"| {k} | {_fmt(v)} |")
     (TABLES / "tables.md").write_text("\n".join(lines), encoding="utf-8")
     return TABLES / "tables.md"
-
-
 def build_latex_tables() -> Path:
     """Export LaTeX table (Table2.tex) from pre-computed results."""
     TABLES.mkdir(parents=True, exist_ok=True)
@@ -91,7 +110,7 @@ def build_latex_tables() -> Path:
         r"\begin{table}[t]", r"\centering",
         r"\caption{TAF-28k main results}", r"\label{tab:main}",
         r"\begin{tabular}{lcc}", r"\toprule",
-        r"Method & F1 & Computation \\\\", r"\midrule",
+        r"Method & F1 & Computation \\", r"\midrule",
     ]
     e1, e4 = res.get("exp1", {}), res.get("exp4", {})
     for name, v in e4.get("classifiers", {}).items():
@@ -103,22 +122,24 @@ def build_latex_tables() -> Path:
     tex = "\n".join(lines)
     (TABLES / "Table2.tex").write_text(tex + "\n", encoding="utf-8")
     return TABLES / "Table2.tex"
-
-
-def _save(fig, name: str, fmt: str = "png"):
-    """Save a matplotlib figure."""
-    FIGS.mkdir(parents=True, exist_ok=True)
-    path = FIGS / f"{name}.{fmt}"
-    fig.savefig(path, dpi=150, bbox_inches="tight")
-    plt.close(fig)
-    return path
-
-
 def build_paper_figures(fmt: str = "png") -> list:
     """Build figures from pre-computed results."""
-    import matplotlib
-    matplotlib.use("Agg")
-    import matplotlib.pyplot as plt
+    try:
+        import matplotlib
+        matplotlib.use("Agg")
+        import matplotlib.pyplot as plt
+    except ImportError:
+        logger.warning("matplotlib not available; skipping figures")
+        return []
+
+    def _save(fig, name: str, fmt: str = "png"):
+        """Save a matplotlib figure."""
+        FIGS.mkdir(parents=True, exist_ok=True)
+        path = FIGS / f"{name}.{fmt}"
+        fig.savefig(path, dpi=150, bbox_inches="tight")
+        plt.close(fig)
+        return path
+
     res = _latest_results()
     made = []
     e8 = res.get("exp8", {})
@@ -127,7 +148,7 @@ def build_paper_figures(fmt: str = "png") -> list:
         fig, ax = plt.subplots(figsize=(6, 4))
         schemes = list(lat.keys())
         vals = [lat[s] for s in schemes]
-        ax.bar(schemes, vals, color=["steelblue", "indianred", "green"])
+        ax.bar(schemes, vals, color=["steelblue", "indianred", "green"][:len(schemes)])
         ax.set_ylabel("Latency (s)")
         ax.set_title("Inference Latency by Quantization")
         for s, v in zip(schemes, vals):

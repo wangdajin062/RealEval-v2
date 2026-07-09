@@ -1,0 +1,14 @@
+id: CLAIM-01
+hypothesis: "OV-Freeze reduces output-variance drift relative to no regulariser."
+experiment: exp3            # maps to experiments/exp3_ov_freeze_control.py
+evidence_path: [conditions] # where in the result the per-condition metrics live
+independent_variable: regulariser_condition
+dependent_variable: variance_drift_pct
+control: [dataset, seed, quantize]
+compare:                    # two conditions to contrast
+  treatment: ov_freeze
+  baseline: no_reg
+acceptance:                 # PASS if ALL hold (drift lower is better)
+  - "treatment.variance_drift_pct < baseline.variance_drift_pct"
+  - "reduction_pct >= 30"   # OV-Freeze cuts drift by at least 30%
+seeds: 5

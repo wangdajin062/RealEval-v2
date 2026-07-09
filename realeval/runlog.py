@@ -113,6 +113,10 @@ def collect_provenance(config: dict | None = None) -> dict:
     return prov
 
 
+# Alias for claim_engine compatibility
+provenance = collect_provenance
+
+
 def log_experiment_start(exp_name: str, config: dict = None):
     """Log the start of an experiment with provenance."""
     logger.info("=== Experiment %s started ===", exp_name)
