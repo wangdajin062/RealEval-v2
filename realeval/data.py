@@ -1,4 +1,4 @@
-"""realeval/data.py — Data Loading (TAF-28k, ChiFraud, AdvFraud-3k)
+"""realeval/data.py — Data Loading (TAF-28k, ChiFraud, AdvFraud-3k, AdvFraud-3k Expert)
 
 Loads real fraud detection datasets from data/ directory.
 Returns (texts, labels, embeddings, speaker_labels) tuples for downstream experiments.
@@ -110,6 +110,42 @@ def load_advfraud3k(max_samples: int | None = None) -> dict:
         return {"texts": texts, "labels": labels, "embeddings": None, "speaker_labels": None, "source": "jsonl"}
     logger.warning("AdvFraud-3k not found at %s", DATA / "AdvFraud3k")
     return {"texts": [], "labels": [], "embeddings": None, "speaker_labels": None, "source": None}
+
+
+def load_advfraud3k_expert(max_samples: int | None = None) -> dict:
+    """Load AdvFraud-3k Expert subset (583 human-crafted adversarial samples).
+
+    Returns dict with keys: texts, labels, embeddings, speaker_labels, source,
+    plus metadata list (annotator_id, fraud_category, strategy, etc.).
+    """
+    jsonl_path = DATA / "AdvFraud3k" / "advfraud3k_expert.jsonl"
+    if jsonl_path.exists():
+        texts, labels, meta = [], [], []
+        with open(jsonl_path, encoding="utf-8") as f:
+            for i, line in enumerate(f):
+                if max_samples and i >= max_samples:
+                    break
+                line = line.strip()
+                if not line:
+                    continue
+                try:
+                    obj = json.loads(line)
+                    texts.append(obj.get("text", ""))
+                    labels.append(int(obj.get("label", 0)))
+                    meta.append({
+                        "id": obj.get("id", ""),
+                        "strategy": obj.get("strategy", ""),
+                        "annotator_id": obj.get("annotator_id", ""),
+                        "fraud_category": obj.get("fraud_category", ""),
+                        "source": obj.get("source", ""),
+                    })
+                except (json.JSONDecodeError, ValueError, TypeError) as e:
+                    logger.warning("Skipping line %d in %s: %s", i, jsonl_path.name, e)
+        return {"texts": texts, "labels": labels, "embeddings": None,
+                "speaker_labels": None, "source": "advfraud3k_expert", "meta": meta}
+    logger.warning("AdvFraud-3k Expert not found at %s", jsonl_path)
+    return {"texts": [], "labels": [], "embeddings": None,
+            "speaker_labels": None, "source": None, "meta": []}
 
 
 def load_synthetic(n: int = 100, seed: int = 42) -> dict:

@@ -1,4 +1,4 @@
-"""exp5: Cross-Dataset — Evaluate on TAF-28k, ChiFraud, AdvFraud-3k."""
+﻿"""exp5: Cross-Dataset 锟?Evaluate on TAF-28k, ChiFraud, AdvFraud-3k."""
 from __future__ import annotations
 import logging
 logger = logging.getLogger("exp5")
@@ -11,6 +11,7 @@ def run(config: dict) -> dict:
         "taf28k": data.load_taf28k(max_samples=config.get("data", {}).get("max_samples", 2000)),
         "chifraud": data.load_chifraud(max_samples=config.get("data", {}).get("max_samples", 2000)),
         "advfraud3k": data.load_advfraud3k(max_samples=config.get("data", {}).get("max_samples", 2000)),
+        "advfraud3k_expert": data.load_advfraud3k_expert(max_samples=config.get("data", {}).get("max_samples", 583)),
     }
 
     from realeval.real_backend import run_paper_safe
@@ -34,6 +35,8 @@ def run(config: dict) -> dict:
             out["chifraud"] = results["chifraud"]
         if "advfraud3k" in results:
             out["advfraud"] = {"full_pool": results["advfraud3k"]}
+        if "advfraud3k_expert" in results:
+            out["advfraud_expert"] = {"full_pool": results["advfraud3k_expert"]}
         return out
 
     paper_result = run_paper_safe(smoke, config, run_paper)
@@ -94,8 +97,10 @@ def run(config: dict) -> dict:
     # advfraud: flat entries (no "pool" wrapper) so report.py can iterate f1 directly.
     if "advfraud3k" in results:
         out["advfraud"] = {"full_pool": results["advfraud3k"]}
+        if "advfraud3k_expert" in results:
+        out["advfraud_expert"] = {"full_pool": results["advfraud3k_expert"]}
     # LDP privacy-utility trade-off: train on DP-protected features, evaluate on clean test data.
-    # Standard DP: noise on training data → model trained under DP → clean evaluation.
+    # Standard DP: noise on training data 鈫?model trained under DP 鈫?clean evaluation.
     if clf_taf is not None:
         Xtr, ytr = X_taf[:split_taf], y_taf[:split_taf]
         Xte, yte = X_taf[split_taf:], y_taf[split_taf:]

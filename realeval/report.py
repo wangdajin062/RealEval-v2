@@ -1,4 +1,4 @@
-"""realeval/report.py — Summary CSV + Paper Table/Figure Generation
+﻿"""realeval/report.py 鈥?Summary CSV + Paper Table/Figure Generation
 
 read_all_results: Read latest results for each experiment under outputs/results
 build_summary_csv: Generate outputs/summary.csv (one key metric per experiment per row)
@@ -90,7 +90,7 @@ def build_paper_tables() -> Path:
     # Table (v25 Table 4): TAF-28k main results
     e1, e4 = res.get("exp1", {}), res.get("exp4", {})
     if e1 or e4:
-        L += ["## Table — TAF-28k main results (v25 Table 4 / Fig 3)", "", "| Method | F1 |", "|---|---|"]
+        L += ["## Table 鈥?TAF-28k main results (v25 Table 4 / Fig 3)", "", "| Method | F1 |", "|---|---|"]
         for name, v in e4.get("classifiers", {}).items():
             L.append(f"| {name} | {fmt(v.get('f1') if isinstance(v, dict) else v)} |")
         if e1.get("f1") is not None:
@@ -100,7 +100,7 @@ def build_paper_tables() -> Path:
     # Table (v25 Table 3): multimodal fusion strategy ablation
     fusion = res.get("exp13", {}).get("strategies", {})
     if fusion:
-        L += ["## Table — Multimodal fusion strategy ablation (v25 Table 3)", "",
+        L += ["## Table 鈥?Multimodal fusion strategy ablation (v25 Table 3)", "",
               "| Fusion strategy | F1 | Params | Latency (ms) |", "|---|---|---|---|"]
         for n, v in fusion.items():
             L.append(f"| {n} | {fmt(v.get('f1'))} | {fmt(v.get('params'))} | {fmt(v.get('latency_ms'))} |")
@@ -109,7 +109,7 @@ def build_paper_tables() -> Path:
     # Table (v25 Table 7): alignment-loss ablation
     variants = res.get("exp2", {}).get("variants", {})
     if variants:
-        L += ["## Table — Alignment-loss ablation (v25 Table 7 / Fig 6a)", "", "| Variant | F1 | KL |", "|---|---|---|"]
+        L += ["## Table 鈥?Alignment-loss ablation (v25 Table 7 / Fig 6a)", "", "| Variant | F1 | KL |", "|---|---|---|"]
         for n, v in variants.items():
             L.append(f"| {n} | {fmt(v.get('f1'))} | {fmt(v.get('kl_final'))} |")
         L.append("")
@@ -117,7 +117,7 @@ def build_paper_tables() -> Path:
     # Table (v25 Table 5): CoT
     e9 = res.get("exp9", {})
     if e9.get("with_cot"):
-        L += ["## Table — Chain-of-thought impact (v25 Table 5)", "", "| Config | F1 | FPR |", "|---|---|---|"]
+        L += ["## Table 鈥?Chain-of-thought impact (v25 Table 5)", "", "| Config | F1 | FPR |", "|---|---|---|"]
         for lbl, key in (("With CoT", "with_cot"), ("Without CoT", "without_cot")):
             d = e9.get(key, {})
             L.append(f"| {lbl} | {fmt(d.get('f1'))} | {fmt(d.get('fpr'))} |")
@@ -126,13 +126,16 @@ def build_paper_tables() -> Path:
     # Table (v25 Table 6): cross-dataset + adversarial (with n/group per pool, reviewer point 4)
     e5 = res.get("exp5", {})
     if e5:
-        L += ["## Table — Cross-dataset & adversarial (v25 Table 6 / Fig 5b)", "", "| Setting | F1 | n |", "|---|---|---|"]
+        L += ["## Table 鈥?Cross-dataset & adversarial (v25 Table 6 / Fig 5b)", "", "| Setting | F1 | n |", "|---|---|---|"]
         for k in ("taf28k", "chifraud", "cross_taf_on_chifraud", "cross_chifraud_on_taf"):
             if k in e5:
                 L.append(f"| {k} | {fmt(e5[k].get('f1') if isinstance(e5[k], dict) else e5[k])} | test split |")
         for k, v in e5.get("advfraud", {}).items():
             n = "".join(ch for ch in k if ch.isdigit()) or "-"
             L.append(f"| advfraud/{k} | {fmt(v.get('f1'))} | {n} samples |")
+        for k, v in e5.get("advfraud_expert", {}).items():
+            n = "".join(ch for ch in k if ch.isdigit()) or "-"
+            L.append(f"| advfraud_expert/{k} | {fmt(v.get('f1'))} | {n} samples |")
         L.append("")
 
     # Table (v25 Table 8): speculative decoding
@@ -141,18 +144,18 @@ def build_paper_tables() -> Path:
         d = e6["diagnostic_B"]
         gen = d.get("alpha_generic_measured")
         dom = d.get("alpha_domain")
-        L += ["## Table — Speculative decoding (v25 Table 8)", "",
+        L += ["## Table 鈥?Speculative decoding (v25 Table 8)", "",
               "| Draft variant | alpha (measured) |", "|---|---|",
               f"| generic | {fmt(gen)} |",
               f"| domain-tuned | {fmt(dom) if dom is not None else 'not measured'} |",
               f"", f"> gamma={d.get('gamma')}, n_samples={d.get('n_samples')}, "
               f"accepted={d.get('accepted')}, proposed={d.get('proposed')}", ""]
 
-    # Table (v25 Table 9): privacy attack — with n/group reported (reviewer point 4)
+    # Table (v25 Table 9): privacy attack 鈥?with n/group reported (reviewer point 4)
     e7 = res.get("exp7", {})
     if e7:
         n_sp = e7.get("n_speakers")
-        L += ["## Table — Privacy attack (v25 Table 9)", "",
+        L += ["## Table 鈥?Privacy attack (v25 Table 9)", "",
               "| Metric | Value | n (group) |", "|---|---|---|",
               f"| ASV-EER (%) | {fmt(e7.get('asv_eer_pct'))} | {fmt(n_sp)} speakers |",
               f"| minDCF | {fmt(e7.get('min_dcf'))} | {fmt(n_sp)} speakers |",
@@ -161,17 +164,19 @@ def build_paper_tables() -> Path:
               "", f"> Chance speaker-ID accuracy at n={fmt(n_sp)} is ~{round(1.0 / n_sp, 4) if n_sp else '-'}; "
               "open-set protocol (enrol/trial disjoint) addresses the reviewer's n>=50 requirement.", ""]
 
-    # Table — Modality coverage (reviewer point 3): which test set exercises the acoustic F_v pipeline
-    L += ["## Table — Modality coverage of evaluation sets (reviewer point 3)", "",
+    # Table 鈥?Modality coverage (reviewer point 3): which test set exercises the acoustic F_v pipeline
+    L += ["## Table 鈥?Modality coverage of evaluation sets (reviewer point 3)", "",
           "| Test set | Text | Acoustic F_v | Note |", "|---|---|---|---|",
           "| TAF-28k | yes | yes | re-enactment protocol (not field-collected) |",
           "| ChiFraud (OOD) | yes | **no** | text-only; does NOT validate F_v acoustic generalisation |",
           "| AdvFraud-3k | yes | no | adversarial text perturbations |",
+          "| AdvFraud-3k (auto) | yes | no | 3k auto-generated adversarial text perturbations |",
+          "| AdvFraud-3k (expert) | yes | no | 583 human-crafted adversarial text samples |",
           "", "> The acoustic generalisation of F_v is only exercised on TAF-28k; field-collected "
           "acoustic validation remains a gap (reviewer points 3 and F).", ""]
 
     # Generic per-experiment summary (all experiments)
-    L += ["## Summary — all experiments", "", "| Experiment | Metric | Value | Computation |", "|---|---|---|---|"]
+    L += ["## Summary 鈥?all experiments", "", "| Experiment | Metric | Value | Computation |", "|---|---|---|---|"]
     for exp in sorted(res):
         m = _pick_metric(res[exp])
         L.append(f"| {m['experiment']} | {m.get('metric', '-')} | {m.get('value', '-')} | {m['computation']} |")
@@ -273,6 +278,9 @@ def build_paper_figures(fmt: str = "png") -> list:
     adv = e5.get("advfraud", {}); ldp = e5.get("ldp_tradeoff", {})
     if schemes or adv or ldp:
         panels = sum(bool(x) for x in (schemes, adv, ldp))
+    adv = e5.get("advfraud", {}); adv_exp = e5.get("advfraud_expert", {}); ldp = e5.get("ldp_tradeoff", {})
+    if schemes or adv or adv_exp or ldp:
+        panels = sum(bool(x) for x in (schemes, adv or adv_exp, ldp))
         fig, axes = plt.subplots(1, panels, figsize=(5 * panels, 4))
         if panels == 1:
             axes = [axes]
@@ -285,6 +293,13 @@ def build_paper_figures(fmt: str = "png") -> list:
             names = list(adv.keys()); f1 = [adv[n]["f1"] for n in names]
             axes[i].bar([n.replace("_", "\n") for n in names], f1, color=["green", "orange", "grey"][:len(names)])
             axes[i].set_ylabel("F1"); axes[i].set_ylim(*_ylim(f1)); axes[i].set_title("(b) AdvFraud pool"); i += 1
+        if adv or adv_exp:
+            names = list(adv.keys()) + list(adv_exp.keys())
+            f1 = [adv[n]["f1"] for n in adv] + [adv_exp[n]["f1"] for n in adv_exp]
+            colors = (["green", "orange", "grey"][:len(adv)] +
+                      ["steelblue", "lightcoral"][:len(adv_exp)])
+            axes[i].bar([n.replace("_", "\n") for n in names], f1, color=colors)
+            axes[i].set_ylabel("F1"); axes[i].set_ylim(*_ylim(f1)); axes[i].set_title("(b) AdvFraud pools"); i += 1
         if ldp:
             # no_ldp is a reference point (large epsilon); exclude it from the curve and draw it as a line.
             pts = sorted((v["epsilon"], v["f1"]) for k, v in ldp.items()
@@ -394,7 +409,7 @@ def build_paper_figures(fmt: str = "png") -> list:
 
     # ================= Reviewer-recommended figures (Manusights Section 4) =================
 
-    # Reviewer C [Essential] — matched-regulariser control: does variance-matching specifically help,
+    # Reviewer C [Essential] 鈥?matched-regulariser control: does variance-matching specifically help,
     # or does any late regulariser help? Plots F1 bars + variance drift across the 4 matched conditions.
     cond = res.get("exp3", {}).get("conditions", {})
     if cond:
@@ -407,7 +422,7 @@ def build_paper_figures(fmt: str = "png") -> list:
         ax2.set_ylabel("Variance drift (%)"); ax2.legend(loc="upper right")
         _save(fig, "figR_matched_regulariser_control")
 
-    # Reviewer B [Essential] — speculative-decoding acceptance-rate: plots the expected-tokens
+    # Reviewer B [Essential] 鈥?speculative-decoding acceptance-rate: plots the expected-tokens
     # curve with the MEASURED alpha operating point marked.
     diag = res.get("exp6", {}).get("diagnostic_B", {})
     if diag:
@@ -431,7 +446,7 @@ def build_paper_figures(fmt: str = "png") -> list:
         ax.set_title("Speculative decoding consistency (reviewer B)"); ax.legend(loc="upper left")
         _save(fig, "figR_specdec_consistency")
 
-    # Reviewer D [Recommended] — open-set ASV privacy at scale (n>=50 speakers): EER, speaker-ID
+    # Reviewer D [Recommended] 鈥?open-set ASV privacy at scale (n>=50 speakers): EER, speaker-ID
     # accuracy vs chance, with n reported (addresses the "n/group not stated" weakness).
     e7 = res.get("exp7", {})
     if e7.get("asv_eer_pct") is not None:
@@ -446,7 +461,7 @@ def build_paper_figures(fmt: str = "png") -> list:
         ax.set_ylabel("Percent"); ax.set_title(f"Open-set ASV privacy, n={n_sp} speakers (reviewer D)")
         _save(fig, "figR_privacy_asv_openset")
 
-    # Reviewer E [Recommended] — efficiency-accuracy vs a real quantised competitor (FraudFusion),
+    # Reviewer E [Recommended] 鈥?efficiency-accuracy vs a real quantised competitor (FraudFusion),
     # plotting F1 against storage footprint (MB) for QAD, FraudFusion and the 7B reference.
     e12 = res.get("exp12", {})
     comp = e12.get("competitor_comparison_real", {}); fp = e12.get("storage_decomposition_point8", {}).get("footprints_mb", {})
@@ -469,7 +484,7 @@ def build_paper_figures(fmt: str = "png") -> list:
         ax.set_title("Efficiency-accuracy vs quantised competitor (reviewer E)")
         _save(fig, "figR_fraudfusion_efficiency")
 
-    # Reviewer point 8 [Weakness] — storage-footprint decomposition: the 28x advantage conflates two
+    # Reviewer point 8 [Weakness] 鈥?storage-footprint decomposition: the 28x advantage conflates two
     # independent axes. This figure separates them: quantization alone (0.5B BF16 -> Q4_K_M = 4.0x) and
     # parameter-scale alone (7B BF16 -> 0.5B BF16 = 7.3x), so the single "28x" number is disaggregated.
     sd = res.get("exp12", {}).get("storage_decomposition_point8", {})
