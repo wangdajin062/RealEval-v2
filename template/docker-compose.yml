@@ -1,0 +1,89 @@
+# H100 RealEval Template — Multi-Service Orchestration
+# Usage: docker compose up -d
+version: "3.9"
+
+services:
+  realeval:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: realeval-h100:latest
+    container_name: realeval-h100
+    hostname: realeval-h100
+    restart: unless-stopped
+    ports:
+      - "${SSH_PORT:-22}:22"          # SSH
+      - "${JUPYTER_PORT:-8888}:8888"  # Jupyter Lab
+      - "${VSCODE_PORT:-3000}:3000"   # code-server (VSCode)
+      - "${API_PORT:-8000}:8000"      # FastAPI
+      - "${OLLAMA_PORT:-11434}:11434" # Ollama
+    environment:
+      # GPU passthrough
+      - NVIDIA_VISIBLE_DEVICES=${NVIDIA_VISIBLE_DEVICES:-all}
+      - NVIDIA_DRIVER_CAPABILITIES=compute,utility
+      # Model cache
+      - HF_HOME=/workspace/hf_cache
+      - TRANSFORMERS_CACHE=/workspace/hf_cache
+      - TORCH_HOME=/workspace/hf_cache/torch
+      - REALEVAL_MODELS_ROOT=/workspace/models
+      - REALEVAL_DATA_ROOT=/workspace/data
+      - REALEVAL_OUTPUT_ROOT=/workspace/outputs
+      - OLLAMA_MODELS=/workspace/.ollama
+      # Jupyter token (set via .env)
+      - JUPYTER_TOKEN=${JUPYTER_TOKEN:-realeval}
+      # VSCode password (set via .env)
+      - VSCODE_PASSWORD=${VSCODE_PASSWORD:-realeval}
+      # API settings
+      - API_WORKERS=${API_WORKERS:-4}
+    volumes:
+      # Persistent workspace — survives container rebuilds
+      - workspace:/workspace
+      # Optional: mount host model cache to reuse across containers
+      - ${HOST_MODEL_CACHE:-/dev/null}:/workspace/hf_cache:ro
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: ${NVIDIA_GPU_COUNT:-all}
+              capabilities: [gpu]
+    shm_size: "16gb"
+    ulimits:
+      memlock: -1
+      stack: 67108864
+    # Health check
+    healthcheck:
+      test: ["CMD", "/scripts/healthcheck.sh"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 60s
+
+  # Dedicated Ollama service (optional, if you want a separate container)
+  ollama:
+    image: ollama/ollama:latest
+    container_name: realeval-ollama
+    restart: unless-stopped
+    ports:
+      - "${OLLAMA_PORT:-11434}:11434"
+    environment:
+      - OLLAMA_MODELS=/workspace/.ollama
+      - OLLAMA_KEEP_ALIVE=24h
+      - OLLAMA_HOST=0.0.0.0
+    volumes:
+      - ollama_models:/workspace/.ollama
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: ${NVIDIA_GPU_COUNT:-1}
+              capabilities: [gpu]
+    profiles:
+      - ollama-standalone  # Only starts with: docker compose --profile ollama-standalone up
+
+volumes:
+  workspace:
+    name: realeval-workspace
+  ollama_models:
+    name: realeval-ollama-models
