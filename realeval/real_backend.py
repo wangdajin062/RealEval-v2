@@ -198,8 +198,12 @@ def real_distill_train(config: dict, train_texts: list[str], test_texts: list[st
     preds = []
     for start in range(0, len(test_texts), batch_size):
         batch = test_texts[start:start + batch_size]
-        prompts = [f"Determine if the following text is fraud or normal: {t}\nAnswer:"
-                   for t in batch]
+        # Use chat template for consistent formatting with training distribution
+        messages_list = [[{"role": "user",
+                           "content": f"请判断以下消息是否为欺诈信息（fraud）或正常信息（normal）。\n仅输出一个词：fraud 或 normal。\n\n消息：{t}\n分类："}]
+                         for t in batch]
+        prompts = [tok.apply_chat_template(msgs, tokenize=False, add_generation_prompt=True)
+                   for msgs in messages_list]
         enc = tok(prompts, return_tensors="pt", padding=True, truncation=True,
                   max_length=max_seq).to(dev)
         with torch.inference_mode():
@@ -320,8 +324,8 @@ def real_llm_classify(config: dict, texts: list[str], labels: list[int], *, quan
             if cot_sys:
                 msgs.append({"role": "system", "content": cot_sys})
             msgs.append({"role": "user",
-                         "content": f"Determine if the following text is fraud or normal: {t}\n"
-                                     "Answer with exactly one word: fraud or normal."})
+                         "content": f"请判断以下消息是否为欺诈信息（fraud）或正常信息（normal）。"
+                                     f"\n仅输出一个词：fraud 或 normal。\n\n消息：{t}\n分类："})
             messages_list.append(msgs)
         prompts = [tok.apply_chat_template(msgs, tokenize=False, add_generation_prompt=True)
                    for msgs in messages_list]

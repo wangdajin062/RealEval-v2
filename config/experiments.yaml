@@ -24,7 +24,7 @@ data:
 training:
   batch_size: 64
   learning_rate: 5e-5
-  epochs: 3
+  epochs: 6
   apply_ov_rescaling: true
   quantize: "int4"  # fp16, int8, int4, nf4
 
