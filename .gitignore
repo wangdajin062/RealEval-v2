@@ -6,9 +6,12 @@ __pycache__/
 dist/
 build/
 
-# Outputs
+# Outputs (generated at runtime)
 outputs/
-*.jsonl
+outputs/**/*.jsonl
+outputs/**/*.csv
+outputs/**/*.npz
+outputs/**/*.wav
 
 # Environment
 .env
@@ -31,11 +34,9 @@ project_code.tar.gz
 .DS_Store
 Thumbs.db
 
-# Data
+# Data (tracked via Git LFS-like split files — keep small metadata only)
+# NPZ files are too large; keep only in HF bucket / local cache
 data/*.npz
-data/*.jsonl
-*.wav
-*.csv
 !data/**/.gitkeep
 
 # Models
