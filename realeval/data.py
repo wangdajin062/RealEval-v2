@@ -13,8 +13,25 @@ import numpy as np
 logger = logging.getLogger("data")
 
 ROOT = Path(__file__).resolve().parent.parent
-DATA = ROOT / "data"
-HF_BUCKET = "hf://buckets/wangdajin062/TeleAntiFraud-bucket"
+HF_BUCKET = "wangdajin062/TeleAntiFraud-bucket"
+
+# Test override hook: set DATA to a Path to redirect all data loading (used by tests).
+DATA: Path | None = None
+
+
+def _data_root() -> Path:
+    """Resolve data root, respecting REALEVAL_DATA_ROOT and RunPod /workspace.
+
+    Tests can override by setting ``data.DATA = tmp_path`` (backward-compatible).
+    """
+    if DATA is not None:
+        return DATA
+    try:
+        from realeval.paths import data_root
+        return data_root()
+    except ImportError:
+        logger.warning("realeval.paths not available, falling back to package-relative data/")
+        return ROOT / "data"
 
 
 def _load_jsonl(path: Path, max_samples: int | None = None) -> tuple[list[str], list[int]]:
@@ -63,7 +80,7 @@ def load_taf28k(max_samples: int | None = None, source: str = "auto") -> dict:
         dict with keys: texts, labels, embeddings, speaker_labels, source.
     """
     if source in ("auto", "jsonl", "multimodal"):
-        jsonl_path = DATA / "TAF28k" / "taf28k.jsonl"
+        jsonl_path = _data_root() / "TAF28k" / "taf28k.jsonl"
         texts, labels = [], []  # ensure defined for multimodal fallback path
         if jsonl_path.exists():
             texts, labels = _load_jsonl(jsonl_path, max_samples)
@@ -72,7 +89,7 @@ def load_taf28k(max_samples: int | None = None, source: str = "auto") -> dict:
                     return {"texts": texts, "labels": labels,
                             "embeddings": None, "speaker_labels": None, "source": "jsonl"}
     if source in ("auto", "npz", "multimodal"):
-        npz_path = DATA / "TAF28k" / "taf28k.npz"
+        npz_path = _data_root() / "TAF28k" / "taf28k.npz"
         if npz_path.exists():
             embeddings, labels_npz, spk = _load_npz(npz_path)
             if max_samples:
@@ -94,7 +111,7 @@ def load_taf28k(max_samples: int | None = None, source: str = "auto") -> dict:
             return {"texts": [], "labels": labels_npz.tolist(),
                     "embeddings": embeddings, "speaker_labels": spk, "source": "npz"}
     # Fallback: try loading from HF bucket when local data is missing
-    logger.warning("TAF-28k not found at %s — trying HF bucket fallback", DATA / "TAF28k")
+    logger.warning("TAF-28k not found at %s — trying HF bucket fallback", _data_root() / "TAF28k")
     try:
         hf_data = load_hf_bucket(HF_BUCKET, split="train", max_samples=max_samples)
         if hf_data["texts"]:
@@ -108,21 +125,21 @@ def load_taf28k(max_samples: int | None = None, source: str = "auto") -> dict:
 
 def load_chifraud(max_samples: int | None = None) -> dict:
     """Load ChiFraud dataset (Chinese fraud detection)."""
-    jsonl_path = DATA / "ChiFraud" / "chifraud.jsonl"
+    jsonl_path = _data_root() / "ChiFraud" / "chifraud.jsonl"
     if jsonl_path.exists():
         texts, labels = _load_jsonl(jsonl_path, max_samples)
         return {"texts": texts, "labels": labels, "embeddings": None, "speaker_labels": None, "source": "jsonl"}
-    logger.warning("ChiFraud not found at %s", DATA / "ChiFraud")
+    logger.warning("ChiFraud not found at %s", _data_root() / "ChiFraud")
     return {"texts": [], "labels": [], "embeddings": None, "speaker_labels": None, "source": None}
 
 
 def load_advfraud3k(max_samples: int | None = None) -> dict:
     """Load AdvFraud-3k dataset (adversarial fraud detection)."""
-    jsonl_path = DATA / "AdvFraud3k" / "advfraud3k.jsonl"
+    jsonl_path = _data_root() / "AdvFraud3k" / "advfraud3k.jsonl"
     if jsonl_path.exists():
         texts, labels = _load_jsonl(jsonl_path, max_samples)
         return {"texts": texts, "labels": labels, "embeddings": None, "speaker_labels": None, "source": "jsonl"}
-    logger.warning("AdvFraud-3k not found at %s", DATA / "AdvFraud3k")
+    logger.warning("AdvFraud-3k not found at %s", _data_root() / "AdvFraud3k")
     return {"texts": [], "labels": [], "embeddings": None, "speaker_labels": None, "source": None}
 
 

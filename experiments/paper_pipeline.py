@@ -25,18 +25,11 @@ logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(name)s] %(levelna
 logger = logging.getLogger("paper_pipeline")
 
 RESULTS = Path(__file__).resolve().parent.parent / "outputs" / "results"
-# All paper pipeline outputs go under outputs/ (consistent with realeval/io.py and realeval/report.py).
 
-# ── Paper experiment group → experiment short-name mapping ──
-# This mapping defines which experiments contribute to each paper section.
-# MODIFICATION RULE: any new experiment must be added here if it produces
-# metrics for a paper table; removing an experiment requires updating
-# _extract(), _aggregate_and_save(), and _print_summary() below.
-# This is a MANUAL mapping, not automatically discovered, because the
-# paper structure is a human design choice.
+# Paper experiment groups -> the underlying experiment short names that produce their metrics.
 PAPER_GROUPS = {
     "01_baseline":     ["exp4"],           # BF16 teacher + classical baselines
-    "02_quantization": ["exp11"],          # fp16 / int8 / int4 / nf4 (NF4 via bitsandbytes) scheme comparison
+    "02_quantization": ["exp11"],          # INT4 / NVFP4 scheme comparison
     "03_QAD":          ["exp1", "exp2"],   # Pure-KL homologous distillation
     "04_OV-Freeze":    ["exp3"],           # OV-Freeze ablation + matched-regulariser control
     "05_latency":      ["exp8", "exp6"],   # H100 latency/throughput + speculative-decoding speedup
@@ -92,7 +85,6 @@ def _apply_h100_optims(config: dict, has_cuda: bool) -> dict:
 def _run_experiments(config: dict, smoke: bool) -> dict:
     """[4/7] model load + [5/7] benchmark: run each experiment group, collect real metrics."""
     logger.info("[4/7] Model load + [5/7] Benchmark (running experiment groups) ...")
-    config["_smoke"] = smoke
     from experiments.runner import _import_exp, _SHORT_TO_FULL
     from realeval.io import save_results
     all_results = {}
@@ -130,20 +122,7 @@ def _device_benchmark(config: dict, has_cuda: bool):
 
 
 def _extract(short, all_results):
-    """Pull headline metrics from each experiment's result dict.
-
-    This function encodes knowledge of each experiment's output shape.
-    It is a MANUAL mapping because each experiment has a unique output schema.
-
-    When adding a new experiment:
-    1. Add its result shape handling here
-    2. Add the short name to PAPER_GROUPS above
-    3. Update _print_summary() if a summary line is desired
-
-    When an experiment changes its output shape:
-    1. Update the corresponding branch here
-    2. Run paper_pipeline --smoke to verify
-    """
+    """Pull headline metrics from each experiment's own result shape."""
     r = all_results.get(short, {})
     if short == "exp1":
         return {"F1": r.get("f1")}
@@ -157,19 +136,53 @@ def _extract(short, all_results):
         c = r.get("classifiers", {})
         return {f"F1[{k}]": x.get("f1") for k, x in c.items()}
     if short == "exp5":
-        return {"cross_taf->chi": r.get("cross_taf_on_chifraud", {}).get("f1"),
-                "cross_chi->taf": r.get("cross_chifraud_on_taf", {}).get("f1")}
+        taf = r.get("taf28k", {}).get("f1")
+        chi = r.get("chifraud", {}).get("f1")
+        adv = r.get("advfraud", {}).get("full_pool", {}).get("f1") if isinstance(r.get("advfraud"), dict) else None
+        cross_tc = r.get("cross_taf_on_chifraud", {}).get("f1")
+        cross_ct = r.get("cross_chifraud_on_taf", {}).get("f1")
+        out = {}
+        if taf is not None: out["taf28k"] = taf
+        if chi is not None: out["chifraud"] = chi
+        if adv is not None: out["advfraud"] = adv
+        if cross_tc is not None: out["cross_taf->chi"] = cross_tc
+        if cross_ct is not None: out["cross_chi->taf"] = cross_ct
+        return out or {"cross_taf->chi": None, "cross_chi->taf": None}
+    if short == "exp6":
+        d = r.get("diagnostic_B", {})
+        hm = d.get("h100_measured", {})
+        out = {}
+        if hm.get("generic") is not None: out["alpha_generic"] = hm["generic"]
+        if hm.get("domain") is not None: out["alpha_domain"] = hm["domain"]
+        return out or {"alpha_generic": None}
     if short == "exp7":
         return {"speaker_id_acc": r.get("speaker_id_accuracy"), "asv_eer_pct": r.get("asv_eer_pct")}
     if short == "exp8":
         return {f"lat_ms[{k}]": v for k, v in r.get("latencies", {}).items()}
+    if short == "exp9":
+        wc = r.get("with_cot", {}); wo = r.get("without_cot", {})
+        return {"cot_f1": wc.get("f1"), "direct_f1": wo.get("f1"),
+                "cot_fpr": wc.get("fpr"), "direct_fpr": wo.get("fpr")}
+    if short == "exp10":
+        return {f"F1[{k}]": x.get("f1") for k, x in r.get("scales", {}).items()}
     if short == "exp11":
         return {f"F1[{k}]": x.get("f1") for k, x in r.get("schemes", {}).items()}
-    # generic fallback
+    if short == "exp12":
+        comp = r.get("competitor_comparison_real", {})
+        storage = r.get("storage_decomposition_point8", {})
+        out = {f"F1[{k}]": x.get("f1") for k, x in comp.items()}
+        for k, v in storage.get("footprints_mb", {}).items():
+            out[f"fp[{k}]"] = v
+        if storage.get("total_advantage_x") is not None:
+            out["total_advantage_x"] = storage["total_advantage_x"]
+        return out
+    if short == "exp13":
+        return {f"F1[{k}]": x.get("f1") for k, x in r.get("strategies", {}).items()}
+    if short == "exp14":
+        models = r.get("models", {})
+        return {f"F1[{k}]": x.get("f1") for k, x in models.items() if x.get("f1") is not None}
     if "f1" in r:
         return {"F1": r["f1"]}
-    if r:
-        logger.warning("_extract: no matching rule for experiment %s (returning empty dict)", short)
     return {}
 
 
@@ -247,11 +260,9 @@ def _print_summary(all_results, bench_summary):
     print(f"QAD:         F1 {all_results.get('exp1', {}).get('f1', 'n/a')}")
     ov = _extract("exp3", all_results)
     print(f"OV-Freeze:   drift {ov.get('drift[ov_freeze_full]', 'n/a')}% (vs no_reg {ov.get('drift[no_reg]', 'n/a')}%)")
-    sd = all_results.get("exp6", {}).get("diagnostic_B", {})
-    h100m = sd.get("h100_measured", {})
-    gen = h100m.get("generic", "n/a") if isinstance(h100m, dict) else "n/a"
-    dom = sd.get("h100_measured", {}).get("domain", "NOT MEASURED") if isinstance(sd.get("h100_measured"), dict) else "NOT MEASURED"
-    print(f"Speculative: alpha generic={gen} domain={dom}")
+    sd = _extract("exp6", all_results)
+    print(f"Speculative: alpha generic={sd.get('alpha_generic', 'n/a')} "
+          f"domain={sd.get('alpha_domain', 'NOT MEASURED')}")
     print(f"Privacy:     speaker-ID acc {all_results.get('exp7', {}).get('speaker_id_accuracy', 'n/a')}, "
           f"ASV-EER {all_results.get('exp7', {}).get('asv_eer_pct', 'n/a')}%")
     if bench_summary and bench_summary.get("rows"):

@@ -96,17 +96,13 @@ Three data source modes are supported:
 
 A 3,000-sample adversarial Chinese fraud text dataset for robustness evaluation.
 
-```bash
-# Build AdvFraud-3k from TAF-28k test set
-python data/scripts/build_advfraud3k.py
-```
+The dataset is pre-built and available in `data/AdvFraud3k/advfraud3k.json` (compiled format in `advfraud_3k_compiled.json`).
+It contains 1,000 fraud samples adapted from TAF-28k with 8 adversarial perturbation strategies
+(synonym, syntactic, dialect, metaphor, tone, key info, splitting, cross-domain) plus 2,000
+novel fraud templates.
 
-The build script:
-
-- Extracts 1,000 fraud samples from TAF-28k test set
-- Applies 8 adversarial perturbation strategies (synonym, syntactic, dialect, metaphor, tone, key info, splitting, cross-domain)
-- Generates 2,000 novel fraud templates
-- Outputs to `data/AdvFraud3k/advfraud3k.json` and `.jsonl`
+> **Note:** The build script (`data/scripts/build_advfraud3k.py`) has been replaced by the
+> pre-compiled dataset. To regenerate, use `advfraud_3k_compiled.json` as the source.
 
 ## Cluster Deployment
 
@@ -139,11 +135,12 @@ Experiment results are saved under `outputs/results/`, including:
 ## H100 Paper Validation (one command)
 
 ```bash
-bash run_h100.sh              # paper-grade (real Qwen + H100)
-bash run_h100.sh --distributed # 8x H100 via torchrun + NCCL
-bash run_h100.sh --smoke       # sandbox verification
+bash run_h100.sh                    # paper-grade (real Qwen + H100)
+bash run_h100.sh --smoke            # sandbox verification
+bash run_h100.sh --distributed      # 8x H100 via torchrun + NCCL
+python -m experiments.runner --exp 1,3,6    # run specific experiments
 ```
 
 Pipeline: CUDA check → GPU detect → env report → model load → benchmark → metrics → save.
-Deliverables in `results/`: metrics.json, latency.csv, throughput.csv, memory.csv, paper_table.md,
+Deliverables in `outputs/results/`: metrics.json, latency.csv, throughput.csv, memory.csv, paper_table.md,
 and paper_tables/{table1_main,table2_ablation,table3_efficiency}.tex. Config overlay: config/h100.yaml.

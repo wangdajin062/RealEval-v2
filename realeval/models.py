@@ -111,22 +111,31 @@ def models_available(config: dict) -> bool:
     Returns True if:
     - Local weights found on disk (safetensors/pytorch_model.bin)
     - Valid HF repo id that can be downloaded at runtime (contains '/', e.g. 'Qwen/Qwen2.5-0.5B')
+    - Config value itself is a valid HF repo id, even if _resolve() returned an absolute
+      path to an incomplete local directory (e.g. /workspace/models/… with no weight files)
     """
     if not _have_transformers():
         return False
     teacher = config.get("models", {}).get("teacher")
+    if not teacher:
+        return False
     resolved = _resolve(teacher)
     if resolved is None:
         return False
     p = Path(resolved)
     if p.exists() and p.is_dir():
-        has_weights = (any(p.glob("model-*.safetensors"))
-                       or any(p.glob("pytorch_model*.bin"))
-                       or any(p.glob("model.safetensors")))
-        if has_weights:
+        for pat in ("model-*.safetensors", "pytorch_model*.bin", "model.safetensors",
+                     "*.safetensors", "*.bin"):
+            if any(p.glob(pat)):
+                return True
+        # Directory exists but no weight files — not a loadable local model.
+        # Fall through to check if the config value is a downloadable HF repo id.
+    # Check resolved path AND original config value for HF repo id pattern (org/repo).
+    # This covers two cases:
+    #   1. resolved = "Qwen/Qwen2.5-0.5B-Instruct" (no local dir) → contains "/", not starts with "/"
+    #   2. resolved = "/workspace/models/Qwen/Qwen2.5-0.5B-Instruct" (empty dir exists)
+    #      → falls through to check teacher = "Qwen/Qwen2.5-0.5B-Instruct" which IS a valid HF repo
+    for candidate in (str(resolved), teacher):
+        if "/" in candidate and not candidate.startswith("/"):
             return True
-    # Not found locally — check if it's a valid HF repo id pattern (org/repo)
-    # that can be downloaded at runtime by load_causal_lm / transformers.
-    if "/" in str(resolved) and not str(resolved).startswith("/"):
-        return True
     return False

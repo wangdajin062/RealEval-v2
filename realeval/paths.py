@@ -69,11 +69,17 @@ def resolve_data(rel_or_abs: str) -> Path:
 
 
 def _has_model_files(d: Path) -> bool:
-    """Check if directory looks like a real model (contains config.json or weight files)."""
+    """Check if directory looks like a real model (contains config.json AND weight files).
+
+    Only config.json without weight files indicates an incomplete download or
+    empty directory — not a loadable model. The weight-file check prevents
+    resolve_model() from returning empty local directories as if they were
+    valid, allowing the fallback to HF download to work.
+    """
     if not d.is_dir():
         return False
-    if (d / "config.json").exists():
-        return True
+    if not (d / "config.json").exists():
+        return False
     for pat in ("*.safetensors", "*.bin", "*.gguf", "*.pt"):
         if any(d.glob(pat)):
             return True
