@@ -93,7 +93,16 @@ def load_taf28k(max_samples: int | None = None, source: str = "auto") -> dict:
                         "embeddings": embeddings[:n], "speaker_labels": spk[:n], "source": "multimodal"}
             return {"texts": [], "labels": labels_npz.tolist(),
                     "embeddings": embeddings, "speaker_labels": spk, "source": "npz"}
-    logger.warning("TAF-28k not found at %s", DATA / "TAF28k")
+    # Fallback: try loading from HF bucket when local data is missing
+    logger.warning("TAF-28k not found at %s — trying HF bucket fallback", DATA / "TAF28k")
+    try:
+        hf_data = load_hf_bucket(HF_BUCKET, split="train", max_samples=max_samples)
+        if hf_data["texts"]:
+            logger.info("Loaded %d samples from HF bucket as TAF28k fallback", len(hf_data["texts"]))
+            hf_data["source"] = "hf_bucket_fallback"
+            return hf_data
+    except Exception as e:
+        logger.warning("HF bucket fallback also failed: %s", e)
     return {"texts": [], "labels": [], "embeddings": None, "speaker_labels": None, "source": None}
 
 

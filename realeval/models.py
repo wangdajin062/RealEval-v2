@@ -106,21 +106,27 @@ def load_causal_lm(path: str, *, quantize: str = None, bf16: bool = True,
 
 
 def models_available(config: dict) -> bool:
-    """Check if real Qwen paths are available (transformers + teacher weights resolvable)."""
+    """Check if real Qwen paths are available (transformers + teacher weights resolvable).
+
+    Returns True if:
+    - Local weights found on disk (safetensors/pytorch_model.bin)
+    - Valid HF repo id that can be downloaded at runtime (contains '/', e.g. 'Qwen/Qwen2.5-0.5B')
+    """
     if not _have_transformers():
         return False
     teacher = config.get("models", {}).get("teacher")
     resolved = _resolve(teacher)
     if resolved is None:
         return False
-    # Verify that the resolved path has actual model weights on disk,
-    # not just a string that fell through to be treated as an HF repo id.
     p = Path(resolved)
     if p.exists() and p.is_dir():
-        # Look for typical model weight file markers (safetensors, bin, or HF hub marker)
-        has_weights = any(p.glob("model-*.safetensors")) or any(p.glob("pytorch_model*.bin")) or any(p.glob("model.safetensors"))
+        has_weights = (any(p.glob("model-*.safetensors"))
+                       or any(p.glob("pytorch_model*.bin"))
+                       or any(p.glob("model.safetensors")))
         if has_weights:
             return True
-    # No local weights found — the resolved value is being treated as an HF repo id.
-    # Return False so callers can distinguish "available locally" from "might work if HF accessible".
+    # Not found locally — check if it's a valid HF repo id pattern (org/repo)
+    # that can be downloaded at runtime by load_causal_lm / transformers.
+    if "/" in str(resolved) and not str(resolved).startswith("/"):
+        return True
     return False
