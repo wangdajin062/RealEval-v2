@@ -30,7 +30,11 @@ def _load_jsonl(path: Path, max_samples: int | None = None) -> tuple[list[str], 
             try:
                 obj = json.loads(line)
                 texts.append(obj.get("text", ""))
-                labels.append(int(obj.get("label", 0)))
+                if "label" not in obj:
+                    logger.warning("Missing 'label' field at line %d in %s — using -1 (unknown)", i, path.name)
+                    labels.append(-1)
+                else:
+                    labels.append(int(obj["label"]))
             except (json.JSONDecodeError, ValueError, TypeError) as e:
                 logger.warning("Skipping line %d in %s: %s", i, path.name, e)
     return texts, labels
@@ -199,14 +203,29 @@ def load_hf_bucket(name_or_path: str = None, split: str = "train",
 
 
 def _to_binary_labels(labels: list) -> list[int]:
-    """Normalise labels to binary (0/1) — fraud-like=1, normal=0."""
+    """Normalise labels to binary (0/1) — fraud-like=1, normal-like=0, unknown=-1.
+
+    FRAUD-LIKE (→1): 1, true, yes, fraud, scam, phishing, spam, malicious, attack, anomaly
+    NORMAL-LIKE (→0): 0, false, no, normal, benign, safe, legitimate, clean, ham
+    UNKNOWN (→-1): anything else — logged as warning, excluded from metrics downstream.
+    """
+    FRAUD_SET = frozenset({"1", "true", "yes", "fraud", "scam", "phishing",
+                           "spam", "malicious", "attack", "anomaly"})
+    NORMAL_SET = frozenset({"0", "false", "no", "normal", "benign", "safe",
+                            "legitimate", "clean", "ham"})
     result = []
+    unknown = 0
     for l in labels:
         s = str(l).strip().lower()
-        if s in ("1", "fraud", "true", "yes", "positive"):
+        if s in FRAUD_SET:
             result.append(1)
-        else:
+        elif s in NORMAL_SET:
             result.append(0)
+        else:
+            result.append(-1)
+            unknown += 1
+    if unknown:
+        logger.warning("_to_binary_labels: %d/%d labels unknown (mapped to -1)", unknown, len(labels))
     return result
 
 

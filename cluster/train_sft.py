@@ -99,14 +99,31 @@ def main():
     )
 
     def tokenize_fn(examples):
-        texts = []
+        full_texts, prompt_texts = [], []
         for t, l in zip(examples["text"], examples["label"]):
             label_str = "fraud" if l == 1 else "normal"
-            prompt = PROMPT_TEMPLATE.format(text=t, label=label_str)
-            texts.append(prompt)
-        enc = tokenizer(texts, truncation=True, padding=True, max_length=256)
-        # Labels are same as input_ids for causal LM (shifted internally)
-        enc["labels"] = [ids.copy() for ids in enc["input_ids"]]
+            prompt_only = PROMPT_TEMPLATE.format(text=t, label="")
+            full_prompt = PROMPT_TEMPLATE.format(text=t, label=label_str)
+            prompt_texts.append(prompt_only)
+            full_texts.append(full_prompt)
+
+        enc = tokenizer(full_texts, truncation=True, padding=True, max_length=256)
+        # Tokenize prompt-only portion to find the split point for masking
+        enc_prompt = tokenizer(prompt_texts, truncation=True, padding=True, max_length=256)
+
+        labels_list = []
+        for i, (full_ids, prompt_ids) in enumerate(zip(enc["input_ids"], enc_prompt["input_ids"])):
+            prompt_len = len([t for t in prompt_ids if t != tokenizer.pad_token_id])
+            label_row = full_ids.copy()
+            # Mask prompt tokens: model should only learn to predict the answer
+            for j in range(min(prompt_len, len(label_row))):
+                label_row[j] = -100
+            # Also mask padding tokens
+            for j in range(len(label_row)):
+                if label_row[j] == tokenizer.pad_token_id:
+                    label_row[j] = -100
+            labels_list.append(label_row)
+        enc["labels"] = labels_list
         return enc
 
     from datasets import Dataset as HFDataset

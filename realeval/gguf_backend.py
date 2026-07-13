@@ -69,8 +69,8 @@ def gguf_classify(model_ref: str, texts, labels, *, n_ctx: int = 2048,
         import re
         m = re.search(r"\b(1|0)\b", ans) or re.search(r"\b(fraud|normal)\b", ans, re.IGNORECASE)
         if m:
-            token = m.group(1)
-            preds.append(1 if token in ("1", "fraud", "Fraud") else 0)
+            token = m.group(1).lower()
+            preds.append(1 if token in ("1", "fraud") else 0)
         else:
             preds.append(0)  # fallback: default to non-fraud
 

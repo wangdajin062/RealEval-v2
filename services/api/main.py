@@ -32,12 +32,23 @@ def experiment_status():
         return {"completed": len(files), "experiments": [f.replace(".json","") for f in files]}
     return {"completed": 0, "experiments": []}
 
+ALLOWED_MODES = {"smoke", "paper"}
+API_TOKEN = os.environ.get("REALEVAL_API_TOKEN", "")
+
 @app.post("/run")
 def run_experiment(req: RunRequest):
-    cmd = f"cd /workspace && python -m experiments.runner --{req.mode}"
+    # Validate mode against whitelist (prevents command injection)
+    mode = req.mode.strip()
+    if mode not in ALLOWED_MODES:
+        return {"status": "error", "error": f"Invalid mode: {mode}. Allowed: {ALLOWED_MODES}"}
     try:
-        subprocess.Popen(cmd, shell=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
-        return {"status": "started", "mode": req.mode, "timestamp": datetime.now().isoformat()}
+        # Use args list (no shell=True) for safe subprocess execution
+        subprocess.Popen(
+            ["python", "-m", "experiments.runner", f"--{mode}"],
+            cwd="/workspace",
+            stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL
+        )
+        return {"status": "started", "mode": mode, "timestamp": datetime.now().isoformat()}
     except Exception as e:
         return {"status": "error", "error": str(e)}
 

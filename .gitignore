@@ -12,8 +12,15 @@ outputs/
 
 # Environment
 .env
+.env.template
 venv/
 .venv/
+
+# Temp/deploy artifacts
+*.tar.gz
+upload_*.json
+upload_*.txt
+project_code.tar.gz
 
 # IDE
 .vscode/

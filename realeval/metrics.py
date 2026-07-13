@@ -23,10 +23,15 @@ def classification_metrics(y_true: list, y_pred: list, y_score: list = None) -> 
         "recall": round(float(recall_score(y_true, y_pred, average="binary", zero_division=0)), 4),
     }
     # False-positive rate = FP / (FP + TN), computed from the confusion matrix.
+    # Auto-detect class labels (handles int/str/float) instead of hardcoding [0, 1].
     try:
         from sklearn.metrics import confusion_matrix
-        tn, fp, fn, tp = confusion_matrix(y_true, y_pred, labels=[0, 1]).ravel()
-        metrics["fpr"] = round(float(fp / (fp + tn)), 4) if (fp + tn) > 0 else 0.0
+        cm = confusion_matrix(y_true, y_pred)
+        if cm.shape == (2, 2):
+            tn, fp, fn, tp = cm.ravel()
+            metrics["fpr"] = round(float(fp / (fp + tn)), 4) if (fp + tn) > 0 else 0.0
+        else:
+            metrics["fpr"] = None  # multi-class or degenerate
     except Exception:
         metrics["fpr"] = None
     # AUC only from continuous scores; None (not a degenerate value) when only hard preds are given.

@@ -1,0 +1,12 @@
+# code-server (VSCode) configuration for H100 RealEval
+bind-addr: 0.0.0.0:3000
+auth: password
+password: "${VSCODE_PASSWORD:-realeval}"
+cert: false
+user-data-dir: /workspace/.vscode-server
+extensions-dir: /workspace/.vscode-server/extensions
+disable-telemetry: true
+disable-update-check: true
+
+# Default workspace
+default-workspace: /workspace

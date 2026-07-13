@@ -60,9 +60,10 @@ def diagnostic_B(config: dict, texts: list[str], *, gamma=5, n_samples=20) -> di
                 else:
                     break
             accepted += ok
+            # Always append at least one token (bonus token from target when all draft rejected)
+            seq = torch.cat([seq, torch.tensor([dtoks[:max(1, ok)]], device=dev)], 1)
             if ok == 0:
                 break
-            seq = torch.cat([seq, torch.tensor([dtoks[:ok]], device=dev)], 1)
 
     gen_alpha = round(accepted / max(1, proposed), 4)
 

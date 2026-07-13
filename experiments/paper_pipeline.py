@@ -171,8 +171,6 @@ def _extract(short, all_results):
     if r:
         logger.warning("_extract: no matching rule for experiment %s (returning empty dict)", short)
     return {}
-        return {"F1": r["f1"]}
-    return {}
 
 
 def _aggregate_and_save(all_results: dict, bench_summary, env: dict):

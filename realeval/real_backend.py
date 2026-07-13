@@ -80,10 +80,16 @@ def real_distillation_step_metrics(config: dict, texts: list[str], *, apply_ov_r
                 # Select only real (non-pad) token positions for KL and variance.
                 t_real = t_out[mask]  # (num_real_tokens, vocab)
                 s_real = s_out[mask]
-                kl_val = F.kl_div(F.log_softmax(s_real, -1), F.softmax(t_real, -1), reduction="batchmean")
-                # Temperature-scaled KL: multiply by T² per Hinton et al. (2015).
+                # Temperature-scaled KL per Hinton et al. (2015):
+                #   KL(softmax(t_logits/T), softmax(s_logits/T)) * T^2
+                # Temperature applied INSIDE softmax to soften the target distribution
+                # and reveal inter-class "dark knowledge."
                 T = float(config.get("distillation", {}).get("temperature", 1.0))
-                kl_val = kl_val * (T ** 2)
+                kl_val = F.kl_div(
+                    F.log_softmax(s_real / T, -1),
+                    F.softmax(t_real / T, -1),
+                    reduction="batchmean"
+                ) * (T ** 2)
                 mse_val = F.mse_loss(s_real, t_real)
                 # loss_fn selects which distillation objective is measured (exp2 loss ablation).
                 if loss_fn == "mse":
@@ -221,13 +227,18 @@ def real_fusion_classify(config, texts, labels, audio_emb, *, quantize="int4", f
     from sklearn.linear_model import LogisticRegression
     ae = np.asarray(audio_emb); n = len(labels); split = max(1, int(n * 0.5))
     try:
-        ac_pred = LogisticRegression(max_iter=500).fit(ae[:split], labels[:split]).predict(ae)
+        # Train on first half, predict on held-out second half to prevent data leakage
+        clf = LogisticRegression(max_iter=500).fit(ae[:split], labels[:split])
+        ac_pred_test = clf.predict(ae[split:])
     except Exception:
         return {k: v for k, v in txt.items() if k != "preds"}
+    # Evaluate fusion only on the held-out test portion (no leakage)
+    txt_test = txt_pred[split:]
+    labels_test = labels[split:]
     if fusion_strategy == "early":
-        fused = ((txt_pred + ac_pred) >= 1).astype(int)
+        fused = ((txt_test + ac_pred_test) >= 1).astype(int)
     elif fusion_strategy == "late":
-        fused = ((txt_pred + ac_pred) >= 2).astype(int)
+        fused = ((txt_test + ac_pred_test) >= 2).astype(int)
     else:
-        fused = np.round(0.6 * txt_pred + 0.4 * ac_pred).astype(int)
-    return classification_metrics(labels, fused)
+        fused = np.round(0.6 * txt_test + 0.4 * ac_pred_test).astype(int)
+    return classification_metrics(labels_test, fused)

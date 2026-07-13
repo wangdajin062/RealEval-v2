@@ -26,7 +26,7 @@ grep -viE '^\s*torch(\b|[><=~!])' requirements.txt > /tmp/reqs_no_torch.txt
 $PY -m pip install --no-input -r /tmp/reqs_no_torch.txt
 
 echo "[3/4] Downloading experiment models..."
-bash cluster/download_assets.sh
+bash cluster/manage_models.sh download
 
 echo "[4/4] Hardware + storage checks..."
 $PY -m experiments.runner --check || true
