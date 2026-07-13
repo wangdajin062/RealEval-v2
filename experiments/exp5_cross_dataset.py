@@ -24,8 +24,27 @@ def run(config: dict) -> dict:
         for dname, ds in datasets.items():
             if ds["texts"]:
                 split = int(len(ds["texts"]) * 0.8)
-                result = real_backend.real_llm_classify(config, ds["texts"][split:], ds["labels"][split:], quantize="int4")
-                results[dname] = {"f1": result["f1"], "accuracy": result["accuracy"]}
+                # AdvFraud-3k is all-fraud → balance with normal samples from taf28k
+                if dname == "advfraud3k" and datasets.get("taf28k", {}).get("texts"):
+                    taf_ds = datasets["taf28k"]
+                    # Take up to n_adv normal samples from taf28k (exclude those already used)
+                    n_adv = len(ds["texts"])
+                    normal_mask = [l == 0 for l in taf_ds["labels"]]
+                    normal_texts = [t for t, m in zip(taf_ds["texts"], normal_mask) if m][:n_adv]
+                    if normal_texts:
+                        # 80/20 split on both fraud and normal, then combine
+                        adv_split = int(n_adv * 0.8)
+                        normal_split = int(len(normal_texts) * 0.8)
+                        mixed_texts = ds["texts"][adv_split:] + normal_texts[normal_split:]
+                        mixed_labels = ds["labels"][adv_split:] + [0] * (len(normal_texts) - normal_split)
+                        result = real_backend.real_llm_classify(config, mixed_texts, mixed_labels, quantize="int4")
+                        results[dname] = {"f1": result["f1"], "accuracy": result["accuracy"]}
+                    else:
+                        result = real_backend.real_llm_classify(config, ds["texts"][split:], ds["labels"][split:], quantize="int4")
+                        results[dname] = {"f1": result["f1"], "accuracy": result["accuracy"], "note": "fraud-only"}
+                else:
+                    result = real_backend.real_llm_classify(config, ds["texts"][split:], ds["labels"][split:], quantize="int4")
+                    results[dname] = {"f1": result["f1"], "accuracy": result["accuracy"]}
         # Map to report.py expected keys
         out = {"experiment": "exp5", "computation": "h100_real_qwen"}
         if "taf28k" in results:
