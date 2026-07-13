@@ -103,7 +103,7 @@ def _run_experiments(config: dict, smoke: bool) -> dict:
 
 
 def _device_benchmark(config: dict, has_cuda: bool):
-    """Real device latency/throughput/memory benchmark -> latency.csv / throughput.csv / memory.csv."""
+    """Real device latency/throughput/memory benchmark -> outputs/metrics/benchmark.csv."""
     if not has_cuda:
         logger.info("      No CUDA: skipping device benchmark CSVs (run on H100 for real numbers).")
         return None
@@ -112,10 +112,9 @@ def _device_benchmark(config: dict, has_cuda: bool):
         from realeval import models, benchmark
         model, tok = models.load_causal_lm(config["models"]["teacher"], quantize="int4", bf16=True)
         sample_ids = tok("Detect fraud in this message.", return_tensors="pt").input_ids.squeeze(0)
-        res = benchmark.benchmark_forward(model, sample_ids, warmup=10, repeat=100,
-                                          batch_sizes=(1, 8, 32))
-        benchmark._write_csv(res)   # writes latency/throughput/memory CSVs
-        return benchmark.benchmark_summary(res)
+        res = benchmark.benchmark(model, sample_ids, warmup=10, repeat=100,
+                                  batch_sizes=(1, 8, 32))
+        return benchmark.summary(res)
     except Exception as e:
         logger.error("      device benchmark failed: %s", e)
         return None
@@ -199,15 +198,15 @@ def _aggregate_and_save(all_results: dict, bench_summary, env: dict):
         metrics["benchmark"] = bench_summary
     (RESULTS / "metrics.json").write_text(json.dumps(metrics, indent=2, ensure_ascii=False))
 
-    # Separate efficiency CSVs (latency / throughput / memory) from the benchmark summary rows.
-    rows = (bench_summary or {}).get("rows", [])
-    if rows:
+    # Write efficiency CSVs from benchmark results (dict keyed by batch_size).
+    raw = (bench_summary or {}).get("all_batch_sizes", {})
+    if raw:
         def _csv(name, cols):
             import csv as _csv_mod
             with open(RESULTS / name, "w", newline="") as f:
                 w = _csv_mod.writer(f); w.writerow([c[0] for c in cols])
-                for row in rows:
-                    w.writerow([row.get(c[1]) for c in cols])
+                for bs, r in sorted(raw.items()):
+                    w.writerow([r.get(c[1]) if c[1] != "batch_size" else bs for c in cols])
         _csv("latency.csv", [("batch_size", "batch_size"), ("p50_ms", "latency_p50_ms"),
                              ("p90_ms", "latency_p90_ms"), ("p99_ms", "latency_p99_ms")])
         _csv("throughput.csv", [("batch_size", "batch_size"), ("samples_per_sec", "throughput_sps")])
@@ -240,8 +239,8 @@ def _aggregate_and_save(all_results: dict, bench_summary, env: dict):
     abl_rows = [[k, v] for k, v in _extract("exp3", all_results).items()]
     _latex("table2_ablation.tex", "OV-Freeze Ablation (variance drift \\%)",
            ["Condition", "Drift(\\%)"], abl_rows)
-    eff_rows = [[r.get("batch_size"), r.get("latency_p50_ms"), r.get("throughput_sps"),
-                 r.get("peak_mem_mb")] for r in rows]
+    eff_rows = [[bs, r.get("latency_p50_ms"), r.get("throughput_sps"),
+                 r.get("peak_mem_mb")] for bs, r in sorted(raw.items())]
     _latex("table3_efficiency.tex", "Efficiency (H100 benchmark)",
            ["Batch", "p50(ms)", "samp/s", "peak mem(MB)"], eff_rows or [["-", "-", "-", "-"]])
 
@@ -265,9 +264,11 @@ def _print_summary(all_results, bench_summary):
           f"domain={sd.get('alpha_domain', 'NOT MEASURED')}")
     print(f"Privacy:     speaker-ID acc {all_results.get('exp7', {}).get('speaker_id_accuracy', 'n/a')}, "
           f"ASV-EER {all_results.get('exp7', {}).get('asv_eer_pct', 'n/a')}%")
-    if bench_summary and bench_summary.get("rows"):
-        r0 = bench_summary["rows"][0]
-        print(f"Latency:     P50 {r0.get('latency_p50_ms', 'n/a')} ms  P99 {r0.get('latency_p99_ms', 'n/a')} ms")
+    raw = (bench_summary or {}).get("all_batch_sizes", {})
+    if raw:
+        first_bs = min(raw)
+        r0 = raw[first_bs]
+        print(f"Latency:     P50 {r0.get('latency_p50_ms', 'n/a')} ms  P99 {r0.get('latency_p99_ms', 'n/a')} ms (bs={first_bs})")
     else:
         print("Latency:     (run --paper on H100 for real latency)")
     print("DONE\n")
