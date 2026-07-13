@@ -1,0 +1,25 @@
+# CLAIM-004: LDP Gaussian mechanism provides meaningful privacy protection
+id: CLAIM-004
+
+hypothesis: >
+  Applying (epsilon, delta)-DP Gaussian noise to training features reduces
+  speaker identification accuracy below 50% (near chance) at epsilon <= 1.5,
+  while classification F1 remains above 0.85.
+
+independent_variables:
+  - epsilon  # privacy budget
+
+dependent_variables:
+  - speaker_id_accuracy
+  - f1
+
+controls:
+  - dataset: TAF-28k
+  - delta: 1e-5
+  - noise_multiplier: 1.0
+  - clip_bound: 3.0
+  - seed: 42
+
+acceptance:
+  speaker_id_accuracy: "<0.5"   # Near chance level at epsilon=1.5
+  f1_min: ">0.85"               # Utility preserved above 0.85

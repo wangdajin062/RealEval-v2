@@ -1,0 +1,25 @@
+# CLAIM-003: Speculative decoding acceptance rate supports speedup claims
+id: CLAIM-003
+
+hypothesis: >
+  The token acceptance rate (alpha) measured on H100 with real Qwen models
+  produces a theoretical speedup consistent with the draft/target architecture,
+  with alpha > 0.75 for the generic draft.
+
+independent_variables:
+  - draft_variant  # generic, domain-tuned
+
+dependent_variables:
+  - alpha  # token acceptance rate
+  - speedup_theoretical
+
+controls:
+  - dataset: TAF-28k
+  - target_model: Qwen2.5-0.5B-Instruct (BF16)
+  - draft_model: Qwen2-0.5B
+  - gamma: 5
+  - seed: 42
+  - gpu: H100
+
+acceptance:
+  alpha_generic: ">0.75"     # Generic draft acceptance > 0.75

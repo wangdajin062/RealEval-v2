@@ -1,0 +1,24 @@
+# CLAIM-001: Q4_K_M quantization provides >2x throughput improvement over BF16
+id: CLAIM-001
+
+hypothesis: >
+  Q4_K_M 4-bit quantization increases inference throughput by more than 2x
+  compared to BF16, while maintaining F1 within 1% of the BF16 baseline.
+
+independent_variables:
+  - quantization_scheme  # BF16, Q4_K_M
+
+dependent_variables:
+  - throughput_sps
+  - f1
+
+controls:
+  - dataset: TAF-28k
+  - model: Qwen2.5-0.5B-Instruct
+  - prompt_template
+  - seed: 42
+  - gpu: H100
+
+acceptance:
+  throughput_ratio: ">2"     # Q4_K_M throughput / BF16 throughput > 2
+  f1_drop: "<0.01"           # BF16 F1 - Q4_K_M F1 < 0.01
