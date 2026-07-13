@@ -21,7 +21,7 @@ if command -v s3fs &>/dev/null; then
     chmod 600 /tmp/.s3passwd
     s3fs "${S3_BUCKET}" "$S3_MOUNT_POINT" \
         -o passwd_file=/tmp/.s3passwd \
-        -o url="${S3_ENDPOINT:-https://s3api-us-ga-2.runpod.io}" \
+        -o url="${S3_ENDPOINT:-https://s3api-us-ne-1.runpod.io}" \
         -o use_path_request_style \
         -o allow_other \
         -o nonempty 2>/dev/null && \
@@ -35,7 +35,7 @@ fi
 if command -v rclone &>/dev/null; then
     rclone config create s3-storage s3 \
         provider Other \
-        endpoint "${S3_ENDPOINT:-https://s3api-us-ga-2.runpod.io}" \
+        endpoint "${S3_ENDPOINT:-https://s3api-us-ne-1.runpod.io}" \
         access_key_id "${S3_ACCESS_KEY}" \
         secret_access_key "${S3_SECRET_KEY}" \
         region us-east-1 2>/dev/null || true
@@ -54,7 +54,7 @@ import os, json
 conf = {
     'aws_access_key_id': os.environ['S3_ACCESS_KEY'],
     'aws_secret_access_key': os.environ['S3_SECRET_KEY'],
-    'endpoint_url': os.environ.get('S3_ENDPOINT', 'https://s3api-us-ga-2.runpod.io'),
+    'endpoint_url': os.environ.get('S3_ENDPOINT', 'https://s3api-us-ne-1.runpod.io'),
     'region_name': 'us-east-1',
 }
 os.makedirs('${S3_MOUNT_POINT}', exist_ok=True)
