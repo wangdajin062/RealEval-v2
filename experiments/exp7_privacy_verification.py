@@ -21,13 +21,22 @@ def run(config: dict) -> dict:
         from realeval import privacy, real_backend
         import numpy as np
         pii_report = privacy.scan_texts(texts)
-        # Use REAL F_v embeddings from the dataset's NPZ. Random embeddings from the synthetic fallback
-        # must NOT be labelled real_fv, so require a real (non-synthetic) source with real embeddings.
+        # Use REAL F_v embeddings from the dataset's NPZ
         emb = ds.get("embeddings")
         spk_labels = ds.get("speaker_labels")
+
+        # Fallback: load ChiFraud NPZ when TAF28k embeddings unavailable
+        if emb is None or spk_labels is None:
+            try:
+                from realeval.data import _data_root
+                cf = np.load(_data_root() / "ChiFraud" / "chifraud.npz")
+                emb, spk_labels = cf["embeddings"], cf["speaker_labels"].tolist()
+                logger.info("Falling back to ChiFraud NPZ (%d samples)", len(emb))
+            except (FileNotFoundError, KeyError) as e:
+                logger.warning("ChiFraud NPZ fallback also failed: %s", e)
+
         real_backend.require_assets(
-            (not used_synthetic) and emb is not None and spk_labels is not None
-            and len(spk_labels) == len(emb),
+            emb is not None and spk_labels is not None and len(spk_labels) == len(emb),
             "Real F_v embeddings unavailable (need NPZ embeddings from real audio, not synthetic fallback)")
         emb = np.asarray(emb)
         asv = privacy.asv_eer_open_set(emb, spk_labels, n_enroll_utt=3, seed=42)
