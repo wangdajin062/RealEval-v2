@@ -154,17 +154,17 @@ def load_spam11358() -> dict:
 
 
 def load_chifraud_balanced() -> dict:
-    """Balanced Chinese fraud detection dataset: 300 fraud + 300 normal.
+    """Balanced Chinese fraud detection dataset: 2000 fraud + 2000 normal.
 
-    Built from ChiFraud normal samples (149) + augmented variations (151)
-    + spam11358 fraud samples (300).  Perfectly balanced, suitable for
-    training without pos_weight.
+    Normal: ChiFraud originals (149) + template generation (~800) + char augmentation (~1050).
+    Fraud: spam11358 diverse fraud SMS samples (2000).
+    Perfectly balanced, suitable for training without pos_weight.
     """
-    path = _data_root() / "balanced600" / "balanced600.jsonl"
+    path = _data_root() / "balanced4k" / "balanced4k.jsonl"
     if path.exists():
         texts, labels = _load_jsonl(path)
         return {"texts": texts, "labels": labels, "embeddings": None,
-                "speaker_labels": None, "source": "balanced600"}
+                "speaker_labels": None, "source": "balanced4k"}
     # Fallback: build on-the-fly
     cf = load_chifraud()
     sf = load_spam11358()
