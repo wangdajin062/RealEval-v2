@@ -19,9 +19,12 @@ def run(config: dict) -> dict:
 
     def run_paper(config):
         from realeval import real_backend
+        from pathlib import Path
+        ft_path = Path(__file__).resolve().parent.parent / "outputs" / "models" / "exp1_finetuned"
+        ft = str(ft_path) if ft_path.exists() else None
         schemes = {}
         for quant in ("fp16", "int8", "int4", "nf4"):
-            result = real_backend.real_llm_classify(config, test_texts, test_labels, quantize=quant)
+            result = real_backend.real_llm_classify(config, test_texts, test_labels, quantize=quant, finetuned_path=ft)
             schemes[quant] = {"f1": result["f1"], "accuracy": result["accuracy"]}
         return {"experiment": "exp11", "computation": "h100_real_qwen", "schemes": schemes}
 

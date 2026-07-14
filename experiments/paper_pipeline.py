@@ -28,9 +28,10 @@ RESULTS = Path(__file__).resolve().parent.parent / "outputs" / "results"
 
 # Paper experiment groups -> the underlying experiment short names that produce their metrics.
 PAPER_GROUPS = {
-    "01_baseline":     ["exp4"],           # BF16 teacher + classical baselines
-    "02_quantization": ["exp11"],          # INT4 / NVFP4 scheme comparison
-    "03_QAD":          ["exp1", "exp2"],   # Pure-KL homologous distillation
+    "00_train":        ["exp1"],           # fine-tune first → saves model for exp4/exp11
+    "01_baseline":     ["exp4"],           # BF16 teacher + classical baselines (uses exp1 model)
+    "02_quantization": ["exp11"],          # INT4 / NVFP4 scheme comparison (uses exp1 model)
+    "03_QAD":          ["exp2"],           # KL loss ablation
     "04_OV-Freeze":    ["exp3"],           # OV-Freeze ablation + matched-regulariser control
     "05_latency":      ["exp8", "exp6"],   # H100 latency/throughput + speculative-decoding speedup
     "06_robustness":   ["exp5", "exp7"],   # OOD/cross-dataset + adversarial/privacy

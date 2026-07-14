@@ -36,8 +36,11 @@ def run(config: dict) -> dict:
             algo.fit(Xtr, train_labels)
             m = classification_metrics(test_labels, algo.predict(Xte))
             baselines[name] = {"f1": m["f1"], "accuracy": m["accuracy"]}
-        # Only the LLM baseline uses the real quantised Qwen classifier.
-        q = real_backend.real_llm_classify(config, test_texts, test_labels, quantize="int4")
+        # Use fine-tuned model if available, else fall back to base Qwen
+        from pathlib import Path
+        ft_path = Path(__file__).resolve().parent.parent / "outputs" / "models" / "exp1_finetuned"
+        ft = str(ft_path) if ft_path.exists() else None
+        q = real_backend.real_llm_classify(config, test_texts, test_labels, quantize="int4", finetuned_path=ft)
         baselines["qwen_int4"] = {"f1": q["f1"], "accuracy": q["accuracy"]}
         return {"experiment": "exp4", "computation": "h100_real_qwen", "classifiers": baselines}
 

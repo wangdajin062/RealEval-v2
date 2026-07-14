@@ -200,6 +200,16 @@ def real_distill_train(config: dict, train_texts: list[str], train_labels: list[
 
     from realeval.metrics import classification_metrics
     m = classification_metrics([int(v) for v in test_labels], preds)
+
+    # Save fine-tuned model + head for downstream experiments (exp4/exp11)
+    from pathlib import Path
+    save_dir = Path(__file__).resolve().parent.parent / "outputs" / "models" / "exp1_finetuned"
+    save_dir.mkdir(parents=True, exist_ok=True)
+    model.save_pretrained(str(save_dir))
+    tok.save_pretrained(str(save_dir))
+    torch.save({"head": head.state_dict(), "hidden_size": hidden_size}, str(save_dir / "head.pt"))
+    logger.info("Saved fine-tuned model to %s", save_dir)
+
     return {"trajectory": trajectory, "f1": m["f1"], "accuracy": m["accuracy"],
             "n_train": len(train_texts), "n_test": len(test_texts)}
 
@@ -258,13 +268,12 @@ def real_speculative_alpha(config: dict, texts: list[str], *, gamma=5, n_samples
 
 # ─────────────────── Real LLM Classification (exp4) ───────────────────
 def real_llm_classify(config: dict, texts: list[str], labels: list[int], *, quantize="int4", use_cot=False,
-                       return_preds=False, classify_batch_size: int = None):
-    """Real (quantized) Qwen binary classification on text, sklearn computes real F1.
+                       return_preds=False, classify_batch_size: int = None, finetuned_path: str = None):
+    """Real Qwen binary classification — base model (token-scoring) or fine-tuned model (head).
 
-    Classification method: apply chat template then compare token probabilities
-    at the first output position. Uses softmax-normalised scores for 'fraud'
-    and 'normal' token(s), with attention-mask-aware last-token selection.
-    Texts are processed in mini-batches to saturate H100 GPU utilization.
+    If finetuned_path is provided, loads a fine-tuned model + classification head
+    saved by real_distill_train and uses head.predict() for stable, high-F1 results.
+    Otherwise falls back to zero-shot token-probability comparison on base Qwen.
     """
     from realeval import models, hwenv
     from realeval.metrics import classification_metrics
@@ -272,6 +281,46 @@ def real_llm_classify(config: dict, texts: list[str], labels: list[int], *, quan
     import torch.nn.functional as F
 
     _require(models.models_available(config), "Real Qwen weights unavailable")
+
+    # ── Fine-tuned path: load saved model + head ──
+    if finetuned_path:
+        import json
+        from pathlib import Path
+        fp = Path(finetuned_path)
+        model, tok = models.load_causal_lm(str(fp), quantize=None, bf16=True)
+        _require(model is not None, "Fine-tuned model loading failed")
+        dev = next(model.parameters()).device
+        model.eval()
+
+        ckpt = torch.load(str(fp / "head.pt"), map_location=dev)
+        head = torch.nn.Linear(ckpt["hidden_size"], 2, dtype=torch.float32).to(dev)
+        head.load_state_dict(ckpt["head"])
+        head.eval()
+
+        _CLS_PFX = "请判断以下消息是否为欺诈信息（fraud）或正常信息（normal）。"
+        _CLS_SFX = chr(10) + "仅输出一个词：fraud 或 normal。" + chr(10) + chr(10) + "消息：{text}" + chr(10) + "分类："
+        def _cls_prompt(t):
+            return _CLS_PFX + _CLS_SFX.format(text=t)
+
+        batch_size = classify_batch_size or config.get("training", {}).get("batch_size", 16)
+        max_seq = int(config.get("distillation", {}).get("max_seq_length", 256))
+        preds = []
+        for start in range(0, len(texts), batch_size):
+            batch = texts[start:start + batch_size]
+            enc = tok([_cls_prompt(t) for t in batch], return_tensors="pt", padding=True,
+                      truncation=True, max_length=max_seq).to(dev)
+            lens = enc.attention_mask.sum(1).clamp(min=1) - 1
+            with torch.inference_mode():
+                hidden = model(**enc, output_hidden_states=True).hidden_states[-1]
+            last = hidden[torch.arange(len(batch), device=dev), lens].float()
+            preds.extend(head(last).argmax(1).tolist())
+
+        m = classification_metrics(labels, preds)
+        if return_preds:
+            m = dict(m); m["preds"] = preds
+        return m
+
+    # ── Base Qwen path (zero-shot token scoring) ──
     model, tok = models.load_causal_lm(config["models"]["teacher"], quantize=quantize, bf16=True)
     _require(model is not None, "Model loading failed")
     dev = next(model.parameters()).device
