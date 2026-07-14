@@ -23,10 +23,26 @@ def run(config: dict) -> dict:
 
     def run_paper(config):
         from realeval import real_backend
+        from realeval import models
+        from pathlib import Path
+        import torch
+        ft_path = Path(__file__).resolve().parent.parent / "outputs" / "models" / "exp1_finetuned"
         schemes = {}
-        for quant in ("fp16", "int8", "int4", "nf4"):
-            result = real_backend.real_llm_classify(config, test_texts, test_labels, quantize=quant)
-            schemes[quant] = {"f1": result["f1"], "accuracy": result["accuracy"]}
+        if ft_path.exists():
+            # Load fine-tuned model at different precisions
+            for dtype_name, dtype in [("fp32", torch.float32), ("fp16", torch.float16), ("bf16", torch.bfloat16)]:
+                model, tok = models.load_causal_lm(str(ft_path), quantize=None, bf16=(dtype == torch.bfloat16))
+                if dtype != torch.bfloat16 and model is not None:
+                    model = model.to(dtype=dtype)
+                result = real_backend.real_llm_classify(config, test_texts, test_labels,
+                                                         quantize=dtype_name, finetuned_path=str(ft_path),
+                                                         finetuned_dtype=dtype_name)
+                schemes[dtype_name] = {"f1": result["f1"], "accuracy": result["accuracy"]}
+        else:
+            # Fallback: base Qwen quantization comparison
+            for quant in ("fp16", "int8", "int4", "nf4"):
+                result = real_backend.real_llm_classify(config, test_texts, test_labels, quantize=quant)
+                schemes[quant] = {"f1": result["f1"], "accuracy": result["accuracy"]}
         return {"experiment": "exp11", "computation": "h100_real_qwen", "schemes": schemes}
 
     paper_result = run_paper_safe(smoke, config, run_paper)

@@ -144,10 +144,10 @@ def real_distill_train(config: dict, train_texts: list[str], train_labels: list[
 
     backbone_lr = float(config.get("training", {}).get("learning_rate", 2e-5))
     head_lr = float(config.get("distillation", {}).get("task_weight", 1e-3))
-    epochs = int(config.get("training", {}).get("epochs", 2))
+    epochs = int(config.get("training", {}).get("epochs", 1))
     max_batch = int(config.get("distillation", {}).get("max_batch", 16))
     max_seq = int(config.get("distillation", {}).get("max_seq_length", 256))
-    dropout = float(config.get("training", {}).get("dropout", 0.3))
+    dropout = float(config.get("training", {}).get("dropout", 0.5))
 
     head = torch.nn.Sequential(
         torch.nn.Dropout(dropout),
@@ -274,11 +274,13 @@ def real_speculative_alpha(config: dict, texts: list[str], *, gamma=5, n_samples
 
 # ─────────────────── Real LLM Classification (exp4) ───────────────────
 def real_llm_classify(config: dict, texts: list[str], labels: list[int], *, quantize="int4", use_cot=False,
-                       return_preds=False, classify_batch_size: int = None, finetuned_path: str = None):
+                       return_preds=False, classify_batch_size: int = None, finetuned_path: str = None,
+                       finetuned_dtype: str = "bf16"):
     """Real Qwen binary classification — base model (token-scoring) or fine-tuned model (head).
 
     If finetuned_path is provided, loads a fine-tuned model + classification head
     saved by real_distill_train and uses head.predict() for stable, high-F1 results.
+    finetuned_dtype: "bf16", "fp16", or "fp32" for loading the fine-tuned model.
     Otherwise falls back to zero-shot token-probability comparison on base Qwen.
     """
     from realeval import models, hwenv
@@ -292,7 +294,10 @@ def real_llm_classify(config: dict, texts: list[str], labels: list[int], *, quan
     if finetuned_path:
         from pathlib import Path
         fp = Path(finetuned_path)
-        model, tok = models.load_causal_lm(str(fp), quantize=None, bf16=True)
+        use_bf16 = finetuned_dtype == "bf16"
+        model, tok = models.load_causal_lm(str(fp), quantize=None, bf16=use_bf16)
+        if not use_bf16:
+            model = model.to(getattr(torch, finetuned_dtype))
         _require(model is not None, "Fine-tuned model loading failed")
         dev = next(model.parameters()).device
         model.eval()
