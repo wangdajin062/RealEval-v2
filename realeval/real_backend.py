@@ -144,15 +144,19 @@ def real_distill_train(config: dict, train_texts: list[str], train_labels: list[
 
     backbone_lr = float(config.get("training", {}).get("learning_rate", 2e-5))
     head_lr = float(config.get("distillation", {}).get("task_weight", 1e-3))
-    epochs = int(config.get("training", {}).get("epochs", 3))
+    epochs = int(config.get("training", {}).get("epochs", 2))
     max_batch = int(config.get("distillation", {}).get("max_batch", 16))
     max_seq = int(config.get("distillation", {}).get("max_seq_length", 256))
+    dropout = float(config.get("training", {}).get("dropout", 0.3))
 
-    head = torch.nn.Linear(hidden_size, 2, dtype=torch.float32).to(dev)
+    head = torch.nn.Sequential(
+        torch.nn.Dropout(dropout),
+        torch.nn.Linear(hidden_size, 2, dtype=torch.float32),
+    ).to(dev)
     optimizer = torch.optim.AdamW([
         {"params": model.parameters(), "lr": backbone_lr},
         {"params": head.parameters(), "lr": head_lr},
-    ], weight_decay=0.01)
+    ], weight_decay=0.05)
 
     trajectory = []
     for epoch in range(epochs):
@@ -209,7 +213,7 @@ def real_distill_train(config: dict, train_texts: list[str], train_labels: list[
     save_dir.mkdir(parents=True, exist_ok=True)
     model.save_pretrained(str(save_dir))
     tok.save_pretrained(str(save_dir))
-    torch.save({"head": head.state_dict(), "hidden_size": hidden_size}, str(save_dir / "head.pt"))
+    torch.save({"head": head.state_dict(), "hidden_size": hidden_size, "dropout": dropout}, str(save_dir / "head.pt"))
     logger.info("Saved fine-tuned model to %s", save_dir)
 
     return {"trajectory": trajectory, "f1": m["f1"], "accuracy": m["accuracy"],
@@ -294,7 +298,10 @@ def real_llm_classify(config: dict, texts: list[str], labels: list[int], *, quan
         model.eval()
 
         ckpt = torch.load(str(fp / "head.pt"), map_location=dev)
-        head = torch.nn.Linear(ckpt["hidden_size"], 2, dtype=torch.float32).to(dev)
+        head = torch.nn.Sequential(
+            torch.nn.Dropout(ckpt["dropout"]),
+            torch.nn.Linear(ckpt["hidden_size"], 2, dtype=torch.float32),
+        ).to(dev)
         head.load_state_dict(ckpt["head"])
         head.eval()
 
