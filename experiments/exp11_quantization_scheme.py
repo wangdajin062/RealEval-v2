@@ -7,8 +7,15 @@ logger = logging.getLogger("exp11")
 def run(config: dict) -> dict:
     smoke = config.get("_smoke", False)
     from realeval import data
-    ds = data.load_taf28k(max_samples=config.get("data", {}).get("max_samples", 2000))
-    texts, labels = ds["texts"], ds["labels"]
+    # Same data as exp1: ChiFraud (balanced) + AdvFraud3k fraud subset
+    cf = data.load_chifraud()
+    af = data.load_advfraud3k()
+    cf_texts, cf_labels = cf["texts"], cf["labels"]
+    af_texts, af_labels = af["texts"], af["labels"]
+    n_normal = sum(1 for l in cf_labels if int(l) == 0)
+    af_fraud_texts = [t for t, l in zip(af_texts, af_labels) if int(l) == 1][:n_normal]
+    texts = cf_texts + af_fraud_texts
+    labels = cf_labels + [1] * len(af_fraud_texts)
     if not texts:
         ds = data.load_synthetic(n=100)
         texts, labels = ds["texts"], ds["labels"]
