@@ -151,13 +151,12 @@ def real_distill_train(config: dict, train_texts: list[str], train_labels: list[
     max_seq = int(config.get("distillation", {}).get("max_seq_length", 256))
     lambda_kl = float(config.get("distillation", {}).get("task_weight", 0.1))
 
-    def _cls_prompt(t):
-        return (f"请判断以下消息是否为欺诈信息（fraud）或正常信息（normal）。"
-                f"
-仅输出一个词：fraud 或 normal。
+    _CLS_PFX = "请判断以下消息是否为欺诈信息（fraud）或正常信息（normal）。"
+    _CLS_SFX = chr(10) + "仅输出一个词：fraud 或 normal。" + chr(10) + chr(10) + "消息：{text}" + chr(10) + "分类："
 
-消息：{t}
-分类：")
+    def _cls_prompt(t):
+        return _CLS_PFX + _CLS_SFX.format(text=t)
+
 
     # Classification head
     head = torch.nn.Linear(hidden_size, 2, dtype=torch.float32).to(dev)
