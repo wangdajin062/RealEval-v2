@@ -32,7 +32,7 @@ def run(config: dict) -> dict:
     def run_paper(config):
         from realeval import real_backend
         # Real distillation: train student via KL against frozen BF16 teacher
-        result = real_backend.real_distill_train(config, train_texts, test_texts, test_labels)
+        result = real_backend.real_distill_train(config, train_texts, train_labels, test_texts, test_labels)
         return {
             "experiment": "exp1",
             "computation": "h100_real_qwen",

@@ -111,17 +111,17 @@ def real_distillation_step_metrics(config: dict, texts: list[str], *, apply_ov_r
             "teacher_dtype": tdtype, "n_texts": len(texts)}
 
 
-def real_distill_train(config: dict, train_texts: list[str], test_texts: list[str],
-                       test_labels: list[int]) -> dict:
-    """Real QAD distillation training: train student via KL against frozen BF16 teacher.
+def real_distill_train(config: dict, train_texts: list[str], train_labels: list[int],
+                       test_texts: list[str], test_labels: list[int]) -> dict:
+    """Real QAD distillation training: train student via KL + supervised CE.
 
     Pipeline:
       1. Load teacher (BF16, frozen) and student (BF16, trainable — no quantization)
-      2. Train student with KL-divergence loss against teacher soft targets
+      2. Train student with KL-divergence loss + cross-entropy classification loss
       3. Evaluate trained student on test set via next-token logit scoring
       4. Return training trajectory + final F1
 
-    Returns dict with keys: trajectory (list of per-epoch KL), f1, accuracy, kl_final, n_train, n_test.
+    Returns dict with keys: trajectory (list of per-epoch KL+CE), f1, accuracy, kl_final, n_train, n_test.
     """
     from realeval import models, hwenv
     import torch
@@ -151,16 +151,31 @@ def real_distill_train(config: dict, train_texts: list[str], test_texts: list[st
     T = float(config.get("distillation", {}).get("temperature", 2.0))
     max_seq = int(config.get("distillation", {}).get("max_seq_length", 256))
     clip_norm = float(config.get("training", {}).get("clip_grad_norm", 1.0))
+    alpha_ce = float(config.get("distillation", {}).get("alpha_ce", 0.5))
+
+    # Token IDs for classification (no leading space — prompt ends with Chinese colon)
+    f_ids = tok("fraud", add_special_tokens=False).input_ids
+    n_ids = tok("normal", add_special_tokens=False).input_ids
+    _require(f_ids and n_ids, "fraud/normal tokenization failed")
 
     optimizer = torch.optim.AdamW(student.parameters(), lr=lr, weight_decay=0.01)
 
     trajectory = []
     for epoch in range(epochs):
         epoch_kl = 0.0
+        epoch_ce = 0.0
         n_batches = 0
         for start in range(0, len(train_texts), max_batch):
-            batch = train_texts[start:start + max_batch]
-            enc = tok(batch, return_tensors="pt", padding=True, truncation=True,
+            batch_texts = train_texts[start:start + max_batch]
+            batch_labels = train_labels[start:start + max_batch]
+            # Build prompted text: raw message + classification prompt, so ONE forward
+            # pass serves both KL (all token positions) and CE (last position).
+            prompts = [f"请判断以下消息是否为欺诈信息（fraud）或正常信息（normal）。"
+                       f"\n仅输出一个词：fraud 或 normal。\n\n消息：{t}\n分类："
+                       for t in batch_texts]
+            labels_t = torch.tensor(batch_labels, device=dev, dtype=torch.long)
+
+            enc = tok(prompts, return_tensors="pt", padding=True, truncation=True,
                       max_length=max_seq).to(dev)
             mask = enc["attention_mask"].bool()
 
@@ -171,7 +186,7 @@ def real_distill_train(config: dict, train_texts: list[str], test_texts: list[st
             with hwenv.autocast_context():
                 s_out = student(**enc).logits
 
-            # KL on real (non-pad) token positions
+            # KL on all real (non-pad) token positions
             t_real = t_out[mask]
             s_real = s_out[mask]
             kl_loss = F.kl_div(
@@ -180,17 +195,29 @@ def real_distill_train(config: dict, train_texts: list[str], test_texts: list[st
                 reduction="batchmean"
             ) * (T ** 2)
 
+            # CE loss: classify fraud/normal at the last real token position
+            seq_lens = mask.sum(dim=1).clamp(min=1) - 1
+            last_logits = s_out[torch.arange(len(batch_texts)), seq_lens]
+            f_logit = last_logits[:, f_ids].mean(dim=1)
+            n_logit = last_logits[:, n_ids].mean(dim=1)
+            logits_2d = torch.stack([n_logit, f_logit], dim=1)  # [batch, 2]: [normal, fraud]
+            ce_loss = F.cross_entropy(logits_2d, labels_t)
+
+            loss = (1 - alpha_ce) * kl_loss + alpha_ce * ce_loss
+
             optimizer.zero_grad()
-            kl_loss.backward()
+            loss.backward()
             torch.nn.utils.clip_grad_norm_(student.parameters(), clip_norm)
             optimizer.step()
 
             epoch_kl += float(kl_loss)
+            epoch_ce += float(ce_loss)
             n_batches += 1
 
         avg_kl = epoch_kl / max(1, n_batches)
-        trajectory.append({"epoch": epoch, "kl": round(avg_kl, 6)})
-        logger.info("Distill epoch %d/%d — KL=%.6f", epoch + 1, epochs, avg_kl)
+        avg_ce = epoch_ce / max(1, n_batches)
+        trajectory.append({"epoch": epoch, "kl": round(avg_kl, 6), "ce": round(avg_ce, 6)})
+        logger.info("Distill epoch %d/%d — KL=%.6f CE=%.4f", epoch + 1, epochs, avg_kl, avg_ce)
 
     # Evaluate trained student on test set
     # NOTE: student was trained on raw text (no chat template), so eval must match
