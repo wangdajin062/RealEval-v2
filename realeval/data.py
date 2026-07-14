@@ -154,25 +154,27 @@ def load_spam11358() -> dict:
 
 
 def load_chifraud_balanced() -> dict:
-    """Balanced Chinese fraud detection dataset: ChiFraud + stratified spam11358.
+    """Balanced Chinese fraud detection dataset: 300 fraud + 300 normal.
 
-    ChiFraud provides ~150 normal samples (balanced 151/149).  spam11358 provides
-    11k+ diverse fraud SMS samples.  We sample 2x normal count from spam11358 for
-    a mild class imbalance that prevents overfitting to a single fraud pattern.
+    Built from ChiFraud normal samples (149) + augmented variations (151)
+    + spam11358 fraud samples (300).  Perfectly balanced, suitable for
+    training without pos_weight.
     """
+    path = _data_root() / "balanced600" / "balanced600.jsonl"
+    if path.exists():
+        texts, labels = _load_jsonl(path)
+        return {"texts": texts, "labels": labels, "embeddings": None,
+                "speaker_labels": None, "source": "balanced600"}
+    # Fallback: build on-the-fly
     cf = load_chifraud()
     sf = load_spam11358()
     cf_texts, cf_labels = cf["texts"], cf["labels"]
     sf_texts, sf_labels = sf["texts"], sf["labels"]
-
     n_normal = sum(1 for l in cf_labels if int(l) == 0)
     sf_fraud = [t for t, l in zip(sf_texts, sf_labels) if int(l) == 1]
-
-    # Sample 2x normal count from spam11358 for fraud diversity
     import random
     random.shuffle(sf_fraud)
     sf_fraud = sf_fraud[:n_normal * 2]
-
     texts = cf_texts + sf_fraud
     labels = cf_labels + [1] * len(sf_fraud)
     return {"texts": texts, "labels": labels, "embeddings": None, "speaker_labels": None, "source": "chifraud+spam11358"}

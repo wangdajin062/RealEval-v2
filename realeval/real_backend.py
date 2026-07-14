@@ -158,11 +158,6 @@ def real_distill_train(config: dict, train_texts: list[str], train_labels: list[
         {"params": head.parameters(), "lr": head_lr},
     ], weight_decay=0.05)
 
-    # Compute pos_weight for imbalanced CE: normal(0) vs fraud(1)
-    n_pos = sum(1 for l in train_labels if int(l) == 1)
-    n_neg = max(1, len(train_labels) - n_pos)
-    pos_weight = torch.tensor([n_neg / n_pos], device=dev)
-
     trajectory = []
     for epoch in range(epochs):
         epoch_ce = 0.0
@@ -181,7 +176,7 @@ def real_distill_train(config: dict, train_texts: list[str], train_labels: list[
             last = hidden[torch.arange(len(batch), device=dev), lens].float()
 
             logits = head(last)
-            ce_loss = F.cross_entropy(logits, labels_t, weight=pos_weight)
+            ce_loss = F.cross_entropy(logits, labels_t)
 
             optimizer.zero_grad()
             ce_loss.backward()
