@@ -112,12 +112,14 @@ def real_distillation_step_metrics(config: dict, texts: list[str], *, apply_ov_r
 
 def real_distill_train(config: dict, train_texts: list[str], train_labels: list[int],
                        test_texts: list[str], test_labels: list[int]) -> dict:
-    """Real supervised QAD distillation: train the student with KL distillation against the frozen
-    BF16 teacher PLUS a CE task loss on the fraud/normal answer token. Pure KL only teaches the student
-    to imitate the (untrained) teacher, so zero-shot eval collapses to one class (F1 degenerate); the
-    CE term gives real task supervision, so the trained student's F1 is meaningful and stable.
+    """Supervised distillation with a classification head on last-token hidden states.
 
-    Returns dict: trajectory (per-epoch kl+ce), f1, accuracy, kl_final, n_train, n_test.
+    Freezes both teacher (BF16) and student (int4) backbones, extracts last-token
+    hidden states, trains a small Linear(hidden->2) head.  Loss = CE(task) + lambda*KL(hidden).
+    Bypasses the token-prior problem -- the head learns fraud/normal directly
+    from the student's internal representation.
+
+    Returns dict: trajectory (per-epoch ce+kl), f1, accuracy, n_train, n_test.
     """
     from realeval import models, hwenv
     import torch
@@ -131,99 +133,98 @@ def real_distill_train(config: dict, train_texts: list[str], train_labels: list[
     for p in teacher.parameters():
         p.requires_grad_(False)
 
+    # Student in int4 (or configured quantize) -- backbone frozen
+    quant = config.get("training", {}).get("quantize", "int4")
     student, _ = models.load_causal_lm(config["models"].get("student", config["models"]["teacher"]),
-                                       quantize=None, bf16=True)
+                                       quantize=quant, bf16=True)
     _require(student is not None, "Student loading failed")
     student = student.to(dev)
-    student.train()
+    student.eval()
     for p in student.parameters():
-        p.requires_grad_(True)
+        p.requires_grad_(False)
 
-    lr = float(config.get("training", {}).get("learning_rate", 5e-5))
-    epochs = int(config.get("training", {}).get("epochs", 3))
+    hidden_size = teacher.config.hidden_size
+
+    lr = float(config.get("training", {}).get("learning_rate", 1e-3))
+    epochs = int(config.get("training", {}).get("epochs", 10))
     max_batch = int(config.get("distillation", {}).get("max_batch", 32))
-    T = float(config.get("distillation", {}).get("temperature", 2.0))
     max_seq = int(config.get("distillation", {}).get("max_seq_length", 256))
-    clip_norm = float(config.get("training", {}).get("clip_grad_norm", 1.0))
-    lambda_task = float(config.get("distillation", {}).get("task_weight", 1.0))
-
-    f_id = tok("fraud", add_special_tokens=False).input_ids[0]
-    n_id = tok("normal", add_special_tokens=False).input_ids[0]
+    lambda_kl = float(config.get("distillation", {}).get("task_weight", 0.1))
 
     def _cls_prompt(t):
-        return (f"\u8bf7\u5224\u65ad\u4ee5\u4e0b\u6d88\u606f\u662f\u5426\u4e3a\u6b3a\u8bc8\u4fe1\u606f\uff08fraud\uff09\u6216\u6b63\u5e38\u4fe1\u606f\uff08normal\uff09\u3002"
-                f"\n\u4ec5\u8f93\u51fa\u4e00\u4e2a\u8bcd\uff1afraud \u6216 normal\u3002\n\n\u6d88\u606f\uff1a{t}\n\u5206\u7c7b\uff1a")
+        return (f"请判断以下消息是否为欺诈信息（fraud）或正常信息（normal）。"
+                f"
+仅输出一个词：fraud 或 normal。
 
-    optimizer = torch.optim.AdamW(student.parameters(), lr=lr, weight_decay=0.01)
+消息：{t}
+分类：")
+
+    # Classification head
+    head = torch.nn.Linear(hidden_size, 2, dtype=torch.float32).to(dev)
+    head.train()
+    optimizer = torch.optim.AdamW(head.parameters(), lr=lr, weight_decay=0.01)
 
     trajectory = []
     for epoch in range(epochs):
-        epoch_kl = epoch_ce = 0.0
+        epoch_ce = epoch_kl = 0.0
         n_batches = 0
         for start in range(0, len(train_texts), max_batch):
             batch = train_texts[start:start + max_batch]
-            blabels = train_labels[start:start + max_batch]
+            labels_t = torch.tensor([int(l) for l in train_labels[start:start + max_batch]],
+                                    device=dev, dtype=torch.long)
 
-            # (a) KL distillation on raw text: keep the student close to the teacher.
-            enc = tok(batch, return_tensors="pt", padding=True, truncation=True,
-                      max_length=max_seq).to(dev)
-            mask = enc["attention_mask"].bool()
+            enc = tok([_cls_prompt(t) for t in batch], return_tensors="pt", padding=True,
+                      truncation=True, max_length=max_seq).to(dev)
+            lens = enc.attention_mask.sum(1).clamp(min=1) - 1
+
+            # teacher hidden (frozen, no grad)
             with torch.inference_mode():
-                with hwenv.autocast_context():
-                    t_out = teacher(**enc).logits
-            with hwenv.autocast_context():
-                s_out = student(**enc).logits
-            kl_loss = F.kl_div(F.log_softmax(s_out[mask] / T, -1),
-                               F.softmax(t_out[mask] / T, -1),
-                               reduction="batchmean") * (T ** 2)
+                t_hidden = teacher(**enc, output_hidden_states=True).hidden_states[-1]
+            t_last = t_hidden[torch.arange(len(batch), device=dev), lens].float()
 
-            # (b) CE task supervision: push the student's answer token toward the true label.
-            cenc = tok([_cls_prompt(t) for t in batch], return_tensors="pt", padding=True,
-                       truncation=True, max_length=max_seq).to(dev)
+            # student hidden (frozen backbone, only head gets gradients)
             with hwenv.autocast_context():
-                c_out = student(**cenc).logits
-            c_lens = cenc.attention_mask.sum(1).clamp(min=1) - 1
-            c_last = c_out[torch.arange(len(batch), device=dev), c_lens].float()
-            targets = torch.tensor([f_id if int(l) == 1 else n_id for l in blabels], device=dev)
-            ce_loss = F.cross_entropy(c_last, targets)
+                s_hidden = student(**enc, output_hidden_states=True).hidden_states[-1]
+            s_last = s_hidden[torch.arange(len(batch), device=dev), lens].float()
 
-            loss = kl_loss + lambda_task * ce_loss
+            logits_2d = head(s_last)
+            ce_loss = F.cross_entropy(logits_2d, labels_t)
+            kl_loss = F.mse_loss(s_last, t_last)
+
+            loss = ce_loss + lambda_kl * kl_loss
             optimizer.zero_grad()
             loss.backward()
-            torch.nn.utils.clip_grad_norm_(student.parameters(), clip_norm)
             optimizer.step()
 
-            epoch_kl += float(kl_loss)
             epoch_ce += float(ce_loss)
+            epoch_kl += float(kl_loss)
             n_batches += 1
 
         nb = max(1, n_batches)
-        trajectory.append({"epoch": epoch, "kl": round(epoch_kl / nb, 6), "ce": round(epoch_ce / nb, 6)})
-        logger.info("Distill epoch %d/%d — KL=%.6f CE=%.6f", epoch + 1, epochs, epoch_kl / nb, epoch_ce / nb)
+        trajectory.append({"epoch": epoch, "ce": round(epoch_ce / nb, 6),
+                           "kl": round(epoch_kl / nb, 6)})
+        logger.info("Head epoch %d/%d -- CE=%.6f KL_h=%.6f", epoch + 1, epochs,
+                    epoch_ce / nb, epoch_kl / nb)
 
-    # Evaluate the trained student on the test set (same prompt; single-token fraud/normal decision).
-    student.eval()
+    # Eval: head on student hidden
+    head.eval()
     batch_size = int(config.get("training", {}).get("batch_size", 64))
     preds = []
     for start in range(0, len(test_texts), batch_size):
         batch = test_texts[start:start + batch_size]
         enc = tok([_cls_prompt(t) for t in batch], return_tensors="pt", padding=True,
                   truncation=True, max_length=max_seq).to(dev)
-        with torch.inference_mode():
-            with hwenv.autocast_context():
-                logits = student(**enc).logits
         lens = enc.attention_mask.sum(1).clamp(min=1) - 1
-        last = logits[torch.arange(len(batch), device=dev), lens].float()
-        preds.extend((last[:, f_id] > last[:, n_id]).int().tolist())
+        with torch.inference_mode():
+            s_hidden = student(**enc, output_hidden_states=True).hidden_states[-1]
+        s_last = s_hidden[torch.arange(len(batch), device=dev), lens].float()
+        preds.extend(head(s_last).argmax(1).tolist())
 
     from realeval.metrics import classification_metrics
     m = classification_metrics([int(v) for v in test_labels], preds)
     return {"trajectory": trajectory, "f1": m["f1"], "accuracy": m["accuracy"],
-            "kl_final": trajectory[-1]["kl"] if trajectory else None,
             "n_train": len(train_texts), "n_test": len(test_texts)}
 
-
-# ─────────────────── Real Speculative Decoding (exp6) ───────────────────
 def real_speculative_alpha(config: dict, texts: list[str], *, gamma=5, n_samples=20,
                            draft_variant="domain", max_new=40):
     from realeval import models, hwenv
