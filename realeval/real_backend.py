@@ -112,44 +112,33 @@ def real_distillation_step_metrics(config: dict, texts: list[str], *, apply_ov_r
 
 def real_distill_train(config: dict, train_texts: list[str], train_labels: list[int],
                        test_texts: list[str], test_labels: list[int]) -> dict:
-    """Supervised distillation with a classification head on last-token hidden states.
+    """Fine-tune Qwen2.5-0.5B (BF16) + classification head for fraud detection.
 
-    Freezes both teacher (BF16) and student (int4) backbones, extracts last-token
-    hidden states, trains a small Linear(hidden->2) head.  Loss = CE(task) + lambda*KL(hidden).
-    Bypasses the token-prior problem -- the head learns fraud/normal directly
-    from the student's internal representation.
+    Full model is trained with CE loss on last-token hidden states.  No frozen
+    backbones, no KL — just supervised fine-tuning of a small LM on a binary
+    classification task.  H100 has plenty of headroom for 0.5B full fine-tune.
 
-    Returns dict: trajectory (per-epoch ce+kl), f1, accuracy, n_train, n_test.
+    Returns dict: trajectory (per-epoch ce), f1, accuracy, n_train, n_test.
     """
     from realeval import models, hwenv
     import torch
     import torch.nn.functional as F
 
     _require(models.models_available(config), "Real Qwen weights unavailable")
-    teacher, tok = models.load_causal_lm(config["models"]["teacher"], quantize=None, bf16=True)
-    _require(teacher is not None, "Teacher loading failed")
-    dev = next(teacher.parameters()).device
-    teacher.eval()
-    for p in teacher.parameters():
-        p.requires_grad_(False)
+    model, tok = models.load_causal_lm(config["models"]["teacher"], quantize=None, bf16=True)
+    _require(model is not None, "Model loading failed")
+    dev = next(model.parameters()).device
+    model.train()
+    for p in model.parameters():
+        p.requires_grad_(True)
 
-    # Student in int4 (or configured quantize) -- backbone frozen
-    quant = config.get("training", {}).get("quantize", "int4")
-    student, _ = models.load_causal_lm(config["models"].get("student", config["models"]["teacher"]),
-                                       quantize=quant, bf16=True)
-    _require(student is not None, "Student loading failed")
-    student = student.to(dev)
-    student.eval()
-    for p in student.parameters():
-        p.requires_grad_(False)
+    hidden_size = model.config.hidden_size
 
-    hidden_size = teacher.config.hidden_size
-
-    lr = float(config.get("training", {}).get("learning_rate", 1e-3))
-    epochs = int(config.get("training", {}).get("epochs", 10))
-    max_batch = int(config.get("distillation", {}).get("max_batch", 32))
+    backbone_lr = float(config.get("training", {}).get("learning_rate", 2e-5))
+    head_lr = float(config.get("distillation", {}).get("task_weight", 1e-3))
+    epochs = int(config.get("training", {}).get("epochs", 3))
+    max_batch = int(config.get("distillation", {}).get("max_batch", 16))
     max_seq = int(config.get("distillation", {}).get("max_seq_length", 256))
-    lambda_kl = float(config.get("distillation", {}).get("task_weight", 0.1))
 
     _CLS_PFX = "请判断以下消息是否为欺诈信息（fraud）或正常信息（normal）。"
     _CLS_SFX = chr(10) + "仅输出一个词：fraud 或 normal。" + chr(10) + chr(10) + "消息：{text}" + chr(10) + "分类："
@@ -157,15 +146,15 @@ def real_distill_train(config: dict, train_texts: list[str], train_labels: list[
     def _cls_prompt(t):
         return _CLS_PFX + _CLS_SFX.format(text=t)
 
-
-    # Classification head
     head = torch.nn.Linear(hidden_size, 2, dtype=torch.float32).to(dev)
-    head.train()
-    optimizer = torch.optim.AdamW(head.parameters(), lr=lr, weight_decay=0.01)
+    optimizer = torch.optim.AdamW([
+        {"params": model.parameters(), "lr": backbone_lr},
+        {"params": head.parameters(), "lr": head_lr},
+    ], weight_decay=0.01)
 
     trajectory = []
     for epoch in range(epochs):
-        epoch_ce = epoch_kl = 0.0
+        epoch_ce = 0.0
         n_batches = 0
         for start in range(0, len(train_texts), max_batch):
             batch = train_texts[start:start + max_batch]
@@ -176,38 +165,28 @@ def real_distill_train(config: dict, train_texts: list[str], train_labels: list[
                       truncation=True, max_length=max_seq).to(dev)
             lens = enc.attention_mask.sum(1).clamp(min=1) - 1
 
-            # teacher hidden (frozen, no grad)
-            with torch.inference_mode():
-                t_hidden = teacher(**enc, output_hidden_states=True).hidden_states[-1]
-            t_last = t_hidden[torch.arange(len(batch), device=dev), lens].float()
-
-            # student hidden (frozen backbone, only head gets gradients)
             with hwenv.autocast_context():
-                s_hidden = student(**enc, output_hidden_states=True).hidden_states[-1]
-            s_last = s_hidden[torch.arange(len(batch), device=dev), lens].float()
+                hidden = model(**enc, output_hidden_states=True).hidden_states[-1]
+            last = hidden[torch.arange(len(batch), device=dev), lens].float()
 
-            logits_2d = head(s_last)
-            ce_loss = F.cross_entropy(logits_2d, labels_t)
-            kl_loss = F.mse_loss(s_last, t_last)
+            logits = head(last)
+            ce_loss = F.cross_entropy(logits, labels_t)
 
-            loss = ce_loss + lambda_kl * kl_loss
             optimizer.zero_grad()
-            loss.backward()
+            ce_loss.backward()
             optimizer.step()
 
-            epoch_ce += float(ce_loss)
-            epoch_kl += float(kl_loss)
+            epoch_ce += float(ce_loss.detach())
             n_batches += 1
 
         nb = max(1, n_batches)
-        trajectory.append({"epoch": epoch, "ce": round(epoch_ce / nb, 6),
-                           "kl": round(epoch_kl / nb, 6)})
-        logger.info("Head epoch %d/%d -- CE=%.6f KL_h=%.6f", epoch + 1, epochs,
-                    epoch_ce / nb, epoch_kl / nb)
+        trajectory.append({"epoch": epoch, "ce": round(epoch_ce / nb, 6)})
+        logger.info("FT epoch %d/%d — CE=%.6f", epoch + 1, epochs, epoch_ce / nb)
 
-    # Eval: head on student hidden
+    # Eval
+    model.eval()
     head.eval()
-    batch_size = int(config.get("training", {}).get("batch_size", 64))
+    batch_size = int(config.get("training", {}).get("batch_size", 16))
     preds = []
     for start in range(0, len(test_texts), batch_size):
         batch = test_texts[start:start + batch_size]
@@ -215,15 +194,17 @@ def real_distill_train(config: dict, train_texts: list[str], train_labels: list[
                   truncation=True, max_length=max_seq).to(dev)
         lens = enc.attention_mask.sum(1).clamp(min=1) - 1
         with torch.inference_mode():
-            s_hidden = student(**enc, output_hidden_states=True).hidden_states[-1]
-        s_last = s_hidden[torch.arange(len(batch), device=dev), lens].float()
-        preds.extend(head(s_last).argmax(1).tolist())
+            hidden = model(**enc, output_hidden_states=True).hidden_states[-1]
+        last = hidden[torch.arange(len(batch), device=dev), lens].float()
+        preds.extend(head(last).argmax(1).tolist())
 
     from realeval.metrics import classification_metrics
     m = classification_metrics([int(v) for v in test_labels], preds)
     return {"trajectory": trajectory, "f1": m["f1"], "accuracy": m["accuracy"],
             "n_train": len(train_texts), "n_test": len(test_texts)}
 
+
+# ─────────────────── Real Speculative Decoding (exp6) ───────────────────
 def real_speculative_alpha(config: dict, texts: list[str], *, gamma=5, n_samples=20,
                            draft_variant="domain", max_new=40):
     from realeval import models, hwenv

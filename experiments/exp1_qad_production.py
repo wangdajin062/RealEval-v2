@@ -38,7 +38,7 @@ def run(config: dict) -> dict:
             "computation": "h100_real_qwen",
             "trajectory": result["trajectory"],
             "f1": result["f1"],
-            "kl_final": result["kl_final"],
+            "accuracy": result["accuracy"],
             "n_train": result["n_train"],
             "n_test": result["n_test"],
             "is_synthetic": False,
