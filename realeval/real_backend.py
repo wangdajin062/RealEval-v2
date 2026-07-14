@@ -282,13 +282,6 @@ def real_llm_classify(config: dict, texts: list[str], labels: list[int], *, quan
 
     _require(models.models_available(config), "Real Qwen weights unavailable")
 
-    # ── Auto-detect fine-tuned model ──
-    if not finetuned_path:
-        from pathlib import Path
-        _default_ft = Path(__file__).resolve().parent.parent / "outputs" / "models" / "exp1_finetuned"
-        if _default_ft.exists():
-            finetuned_path = str(_default_ft)
-
     # ── Fine-tuned path: load saved model + head ──
     if finetuned_path:
         import json
