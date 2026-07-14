@@ -268,7 +268,7 @@ def real_speculative_alpha(config: dict, texts: list[str], *, gamma=5, n_samples
             base = seq.shape[1]
             ok = 0
             for i, tk in enumerate(dtoks):
-                pt = float(F.softmax(tlog[0, base + i], -1)[tk])
+                pt = float(F.softmax(tlog[0, base + i - 1], -1)[tk])
                 if torch.rand(1).item() < pt / (dprobs[i] + 1e-9):
                     ok += 1
                 else:

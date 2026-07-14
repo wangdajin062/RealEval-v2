@@ -53,7 +53,7 @@ def diagnostic_B(config: dict, texts: list[str], *, gamma=5, n_samples=20) -> di
             base = seq.shape[1]
             ok = 0
             for i, tk in enumerate(dtoks):
-                pt = float(F.softmax(tlog[0, base + i], -1)[tk])
+                pt = float(F.softmax(tlog[0, base + i - 1], -1)[tk])
                 # Standard speculative decoding: accept with probability min(1, p/q)
                 if torch.rand(1).item() < pt / (dprobs[i] + 1e-9):
                     ok += 1
