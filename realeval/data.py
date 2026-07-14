@@ -143,24 +143,39 @@ def load_advfraud3k(max_samples: int | None = None) -> dict:
     return {"texts": [], "labels": [], "embeddings": None, "speaker_labels": None, "source": None}
 
 
-def load_chifraud_balanced() -> dict:
-    """Balanced Chinese fraud detection dataset: ChiFraud + subset of AdvFraud3k.
+def load_spam11358() -> dict:
+    """Load spam11358 dataset (11k+ cleaned Chinese fraud SMS). All-fraud."""
+    jsonl_path = _data_root() / "spam11358" / "spam11358.jsonl"
+    if jsonl_path.exists():
+        texts, labels = _load_jsonl(jsonl_path)
+        return {"texts": texts, "labels": labels, "embeddings": None, "speaker_labels": None, "source": "spam11358"}
+    logger.warning("spam11358 not found at %s", _data_root() / "spam11358")
+    return {"texts": [], "labels": [], "embeddings": None, "speaker_labels": None, "source": None}
 
-    ChiFraud has ~150 fraud / ~150 normal (balanced).  AdvFraud3k is all-fraud.
-    We take all ChiFraud + an equal number of AdvFraud3k fraud samples to
-    maintain balance.  Returns (texts, labels) suitable for train/test split.
+
+def load_chifraud_balanced() -> dict:
+    """Balanced Chinese fraud detection dataset: ChiFraud + stratified spam11358.
+
+    ChiFraud provides ~150 normal samples (balanced 151/149).  spam11358 provides
+    11k+ diverse fraud SMS samples.  We sample 2x normal count from spam11358 for
+    a mild class imbalance that prevents overfitting to a single fraud pattern.
     """
     cf = load_chifraud()
-    af = load_advfraud3k()
+    sf = load_spam11358()
     cf_texts, cf_labels = cf["texts"], cf["labels"]
-    af_texts, af_labels = af["texts"], af["labels"]
+    sf_texts, sf_labels = sf["texts"], sf["labels"]
+
     n_normal = sum(1 for l in cf_labels if int(l) == 0)
-    af_fraud_texts = [t for t, l in zip(af_texts, af_labels) if int(l) == 1]
-    # Match normal count for balance
-    af_fraud_texts = af_fraud_texts[:n_normal]
-    texts = cf_texts + af_fraud_texts
-    labels = cf_labels + [1] * len(af_fraud_texts)
-    return {"texts": texts, "labels": labels, "embeddings": None, "speaker_labels": None, "source": "chifraud+advfraud3k"}
+    sf_fraud = [t for t, l in zip(sf_texts, sf_labels) if int(l) == 1]
+
+    # Sample 2x normal count from spam11358 for fraud diversity
+    import random
+    random.shuffle(sf_fraud)
+    sf_fraud = sf_fraud[:n_normal * 2]
+
+    texts = cf_texts + sf_fraud
+    labels = cf_labels + [1] * len(sf_fraud)
+    return {"texts": texts, "labels": labels, "embeddings": None, "speaker_labels": None, "source": "chifraud+spam11358"}
 
 
 def load_synthetic(n: int = 100, seed: int = 42) -> dict:
