@@ -19,7 +19,8 @@ done
 
 # Auto-clean previous results before each fresh run
 rm -rf outputs/results/* outputs/metrics/* outputs/predictions/* 2>/dev/null
-echo "=== Cleaned previous outputs ==="
+rm -rf docs/figure/*.png docs/figure/*.pdf docs/figure/*.tiff 2>/dev/null
+echo "=== Cleaned previous outputs + figures ==="
 
 # H100 multi-GPU: expose all 8 cards for NCCL/DDP (harmless if fewer/none present).
 export CUDA_VISIBLE_DEVICES="${CUDA_VISIBLE_DEVICES:-0,1,2,3,4,5,6,7}"
