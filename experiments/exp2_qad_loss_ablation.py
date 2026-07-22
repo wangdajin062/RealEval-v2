@@ -7,14 +7,20 @@ logger = logging.getLogger("exp2")
 def run(config: dict) -> dict:
     smoke = config.get("_smoke", False)
     from realeval import data
-    ds = data.load_taf28k(max_samples=config.get("data", {}).get("max_samples", 2000))
+    # Balanced Chinese fraud detection dataset (shared with exp1/exp3/exp4/exp11).
+    ds = data.load_chifraud_balanced()
     texts, labels = ds["texts"], ds["labels"]
     if not texts:
         ds = data.load_synthetic(n=200)
         texts, labels = ds["texts"], ds["labels"]
-    split = int(len(texts) * 0.8)
-    train_texts, test_texts = texts[:split], texts[split:]
-    train_labels, test_labels = labels[:split], labels[split:]
+
+    # Leakage-safe split
+    from realeval.data import group_split
+    train_idx, test_idx = group_split(texts, labels, test_ratio=0.2, seed=42)
+    train_texts = [texts[i] for i in train_idx]
+    train_labels = [int(labels[i]) for i in train_idx]
+    test_texts = [texts[i] for i in test_idx]
+    test_labels = [int(labels[i]) for i in test_idx]
 
     from realeval.real_backend import run_paper_safe
 

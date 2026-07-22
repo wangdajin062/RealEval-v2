@@ -7,7 +7,7 @@ logger = logging.getLogger("exp8")
 def run(config: dict) -> dict:
     smoke = config.get("_smoke", False)
     from realeval import data
-    ds = data.load_taf28k(max_samples=config.get("data", {}).get("max_samples", 200))
+    ds = data.load_chifraud_balanced()
     texts = ds["texts"]
     if not texts:
         ds = data.load_synthetic(n=50)
