@@ -298,10 +298,13 @@ def real_llm_classify(config: dict, texts: list[str], labels: list[int], *, quan
     if finetuned_path:
         from pathlib import Path
         fp = Path(finetuned_path)
-        use_bf16 = finetuned_dtype == "bf16"
+        # Map short dtype names to torch dtypes ("fp32"→float32, "fp16"→float16, etc.)
+        _DTYPE_MAP = {"fp32": torch.float32, "fp16": torch.float16, "bf16": torch.bfloat16,
+                      "float32": torch.float32, "float16": torch.float16, "bfloat16": torch.bfloat16}
+        use_bf16 = finetuned_dtype in ("bf16", "bfloat16")
         model, tok = models.load_causal_lm(str(fp), quantize=None, bf16=use_bf16)
         if not use_bf16:
-            model = model.to(getattr(torch, finetuned_dtype))
+            model = model.to(_DTYPE_MAP.get(finetuned_dtype, torch.float32))
         _require(model is not None, "Fine-tuned model loading failed")
         dev = next(model.parameters()).device
         model.eval()
