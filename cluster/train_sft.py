@@ -68,7 +68,7 @@ def main():
     # ── 2. Load teacher model ──
     import torch
     from transformers import (AutoModelForCausalLM, AutoTokenizer,
-                              Trainer, TrainingArguments, DataCollatorWithPadding)
+                              Trainer, TrainingArguments)
     from peft import LoraConfig, get_peft_model, TaskType
 
     model_id = "Qwen/Qwen2.5-0.5B-Instruct"
@@ -99,32 +99,57 @@ def main():
     )
 
     def tokenize_fn(examples):
-        full_texts, prompt_texts = [], []
+        """Build (input_ids, labels) with an exact prompt/answer boundary.
+
+        The previous implementation tokenised the prompt and the full text separately and
+        masked `range(prompt_len)`. For this template both tokenise to the same length —
+        the trailing space in "Answer: " is its own token and " fraud" occupies that same
+        position — so the mask covered the answer too and every label became -100
+        (loss 0.0, grad_norm 0.0, eval_loss nan).
+
+        Here the prompt and the answer are tokenised independently with
+        add_special_tokens=False and concatenated, so the boundary is known by
+        construction and cannot drift with the tokeniser's merge rules.
+        """
+        PROMPT = ("Determine if the following text is fraud or normal.\n\n"
+                  "Text: {text}\n\nAnswer:")
+        input_ids_list, labels_list, attn_list = [], [], []
+
         for t, l in zip(examples["text"], examples["label"]):
-            label_str = "fraud" if l == 1 else "normal"
-            prompt_only = PROMPT_TEMPLATE.format(text=t, label="")
-            full_prompt = PROMPT_TEMPLATE.format(text=t, label=label_str)
-            prompt_texts.append(prompt_only)
-            full_texts.append(full_prompt)
+            answer = " fraud" if l == 1 else " normal"
+            p_ids = tokenizer(PROMPT.format(text=t), add_special_tokens=False)["input_ids"]
+            a_ids = tokenizer(answer, add_special_tokens=False)["input_ids"]
+            if tokenizer.eos_token_id is not None:
+                a_ids = a_ids + [tokenizer.eos_token_id]
 
-        enc = tokenizer(full_texts, truncation=True, padding=True, max_length=256)
-        # Tokenize prompt-only portion to find the split point for masking
-        enc_prompt = tokenizer(prompt_texts, truncation=True, padding=True, max_length=256)
+            # Truncate the PROMPT (never the answer) so supervision always survives.
+            budget = 256 - len(a_ids)
+            if len(p_ids) > budget:
+                p_ids = p_ids[:budget]
 
-        labels_list = []
-        for i, (full_ids, prompt_ids) in enumerate(zip(enc["input_ids"], enc_prompt["input_ids"])):
-            prompt_len = len([t for t in prompt_ids if t != tokenizer.pad_token_id])
-            label_row = full_ids.copy()
-            # Mask prompt tokens: model should only learn to predict the answer
-            for j in range(min(prompt_len, len(label_row))):
-                label_row[j] = -100
-            # Also mask padding tokens
-            for j in range(len(label_row)):
-                if label_row[j] == tokenizer.pad_token_id:
-                    label_row[j] = -100
-            labels_list.append(label_row)
-        enc["labels"] = labels_list
-        return enc
+            ids = p_ids + a_ids
+            labels = [-100] * len(p_ids) + a_ids[:]      # supervise the answer only
+            input_ids_list.append(ids)
+            labels_list.append(labels)
+            attn_list.append([1] * len(ids))
+
+        # Right-pad the batch; padding positions are masked out of the loss.
+        maxlen = max(len(x) for x in input_ids_list)
+        pad_id = tokenizer.pad_token_id
+        for i in range(len(input_ids_list)):
+            gap = maxlen - len(input_ids_list[i])
+            input_ids_list[i] += [pad_id] * gap
+            labels_list[i]    += [-100] * gap
+            attn_list[i]      += [0] * gap
+
+        n_sup = sum(1 for row in labels_list for x in row if x != -100)
+        if n_sup == 0:
+            raise RuntimeError(
+                "tokenize_fn produced zero supervised tokens; training would report "
+                "loss=0.0 and learn nothing. Check the prompt/answer construction.")
+
+        return {"input_ids": input_ids_list, "labels": labels_list,
+                "attention_mask": attn_list}
 
     from datasets import Dataset as HFDataset
     train_ds = HFDataset.from_dict({"text": train_texts, "label": train_labels})
@@ -164,7 +189,7 @@ def main():
         args=training_args,
         train_dataset=train_ds,
         eval_dataset=test_ds,
-        data_collator=DataCollatorWithPadding(tokenizer, padding=True),
+        data_collator=None,  # tokenize_fn already pads; re-padding would double-pad
     )
 
     logger.info("=== Starting SFT training (%d epochs, lr=%s, bs=%d×%d) ===",

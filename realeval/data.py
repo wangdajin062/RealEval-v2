@@ -261,8 +261,18 @@ def load_hf_bucket(name_or_path: str = None, split: str = "train",
         return {"texts": texts, "labels": labels, "embeddings": embeddings,
                 "speaker_labels": speaker_labels, "source": f"hf:{repo}"}
     except Exception as e:
-        logger.warning("HF bucket load failed (%s), falling back to synthetic: %s", repo, e)
-        return load_synthetic(n=max_samples or 200)
+        # A silent synthetic fallback let a training run complete on placeholder
+        # strings ('synthetic_normal_0'), producing an adapter that learned nothing.
+        # Opt in explicitly if you really want synthetic data.
+        import os as _os
+        if _os.environ.get("REALEVAL_ALLOW_SYNTHETIC") == "1":
+            logger.warning("HF bucket load failed (%s), falling back to synthetic (opt-in): %s", repo, e)
+            return load_synthetic(n=max_samples or 200)
+        raise RuntimeError(
+            f"HF bucket load failed ({repo}): {e}. "
+            "Set REALEVAL_ALLOW_SYNTHETIC=1 to fall back to synthetic data, "
+            "or fix the data source. For text SFT prefer load_text_corpus('balanced4k')."
+        ) from e
 
 
 def _to_binary_labels(labels: list) -> list[int]:
