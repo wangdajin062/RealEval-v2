@@ -334,6 +334,10 @@ def real_llm_classify(config: dict, texts: list[str], labels: list[int], *, quan
 
     # ── Base Qwen path (zero-shot token scoring) ──
     model, tok = models.load_causal_lm(config["models"]["teacher"], quantize=quantize, bf16=True)
+    # Attach the tuned LoRA adapter when a student_variant is set.
+    from realeval.student_loader import attach_adapter
+    model = attach_adapter(model, config.get('student_variant', 'base'),
+                           config, quantize=quantize)
     _require(model is not None, "Model loading failed")
     dev = next(model.parameters()).device
 
