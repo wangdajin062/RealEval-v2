@@ -137,7 +137,7 @@ def real_distill_train(config: dict, train_texts: list[str], train_labels: list[
     # Attach the tuned LoRA adapter when a student_variant is set.
     from realeval.student_loader import attach_adapter
     model = attach_adapter(model, config.get('student_variant', 'base'),
-                           config, quantize=quantize)
+                           config, quantize=None)
     _require(model is not None, "Model loading failed")
     dev = next(model.parameters()).device
     model.train()
