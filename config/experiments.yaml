@@ -96,6 +96,9 @@ audio:
 
 # LoRA adapters produced by cluster/train_sft.py (added by apply_all_fixes.py)
 students:
-  qad_ovf: \workspace\outputs\sft_checkpoints/checkpoint-XXX  # TRAIN ME
+  qad_ovf: /workspace/outputs/sft_checkpoints/checkpoint-250
   # qad_no_ovf: /workspace/outputs/sft_no_ovf/checkpoint-XXX
   # bitdistiller: /workspace/outputs/sft_bitdistiller/checkpoint-XXX
+
+# Which student variant to attach (set to "base" to skip adapter).
+student_variant: qad_ovf
