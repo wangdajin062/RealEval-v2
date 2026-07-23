@@ -25,6 +25,7 @@ logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(name)s] %(levelna
 logger = logging.getLogger("paper_pipeline")
 
 RESULTS = Path(__file__).resolve().parent.parent / "outputs" / "results"
+FIGURE_SCRIPTS = Path(__file__).resolve().parent.parent / "docs" / "figure_scripts"
 
 # Paper experiment groups -> the underlying experiment short names that produce their metrics.
 PAPER_GROUPS = {
@@ -36,6 +37,48 @@ PAPER_GROUPS = {
     "05_latency":      ["exp8", "exp6"],   # H100 latency/throughput + speculative-decoding speedup
     "06_robustness":   ["exp5", "exp7"],   # OOD/cross-dataset + adversarial/privacy
 }
+
+
+def _paper_preflight(config: dict) -> tuple[bool, list[str]]:
+    """Check hard requirements for paper-mode run before executing experiments."""
+    missing: list[str] = []
+
+    # Dependency preflight
+    try:
+        import sklearn  # noqa: F401
+    except Exception:
+        missing.append("python package: scikit-learn (sklearn)")
+    try:
+        import transformers  # noqa: F401
+    except Exception:
+        missing.append("python package: transformers")
+    try:
+        import bitsandbytes  # noqa: F401
+    except Exception:
+        missing.append("python package: bitsandbytes>=0.46.1")
+
+    # Asset preflight
+    try:
+        from realeval import models
+        if not models.models_available(config):
+            teacher = (config.get("models", {}) or {}).get("teacher", "<unset>")
+            missing.append(f"model assets unavailable: {teacher}")
+    except Exception as e:
+        missing.append(f"model availability check failed: {e}")
+
+    # Adapter preflight for non-base student variants used by quantized paper runs.
+    try:
+        from realeval.student_loader import resolve_adapter
+        variant = config.get("student_variant", "base")
+        if variant not in ("", None, "base"):
+            if resolve_adapter(variant, config=config) is None:
+                missing.append(
+                    f"LoRA adapter missing for student_variant='{variant}' under REALEVAL_ADAPTER_ROOT"
+                )
+    except Exception as e:
+        missing.append(f"adapter availability check failed: {e}")
+
+    return (len(missing) == 0, missing)
 
 
 def _cuda_check():
@@ -215,14 +258,36 @@ def _aggregate_and_save(all_results: dict, bench_summary, env: dict):
 
     logger.info("[7/7] Writing paper tables (md + LaTeX) ...")
     # Markdown summary
-    md = ["# Paper Tables (auto-generated from real results)", ""]
-    for group, shorts in PAPER_GROUPS.items():
-        md.append(f"## {group}")
-        for s in shorts:
-            ex = _extract(s, all_results)
-            comp = all_results.get(s, {}).get("computation", "-")
-            md.append(f"- **{s}** ({comp}): " + ", ".join(f"{k}={v}" for k, v in ex.items()))
-        md.append("")
+    sys.path.insert(0, str(FIGURE_SCRIPTS))
+    import paper_data
+
+    def _table_label(text):
+        return " ".join(str(text).split())
+
+    md = ["# Paper Tables (paper-shaped export)", ""]
+    md.append("## table1_main")
+    md.append("- Literature baselines are kept from cited reference values in paper_data.")
+    md.append("- Our method rows use the current paper_data bridge values.")
+    for row in ([
+        ("BF16 (upper)", paper_data.BF16_F1, 100.0, "paper reference"),
+        *[(m["name"], m["f1"], m["recovery"], "cited baseline") for m in paper_data.EXP01_QUANT_QUALITY],
+        *[(m["name"], m["f1"], m["recovery"], "paper_data / measured-ours") for m in paper_data.QAT_QAD_OVF],
+        ("SAFE-QAQ", paper_data.SAFE_QAQ_F1, round(paper_data.SAFE_QAQ_F1 / paper_data.BF16_F1 * 100, 1), "cited baseline"),
+    ]):
+        md.append(f"- {_table_label(row[0])}: F1={row[1]}, relative_to_bf16_pct={row[2]} [{row[3]}]")
+    md.append("")
+    md.append("## table2_ablation")
+    md.append("- Layer-selection ablation for OV-Freeze. Values come from the current paper_data bridge.")
+    for row in paper_data.EXP04_OVF_LAYER_ABLATION:
+        md.append(f"- {_table_label(row['config'])}: F1={row['f1']}, drift={row['drift_pct']}")
+    md.append("")
+    md.append("## table3_efficiency")
+    raw_rows = (bench_summary or {}).get("all_batch_sizes", {})
+    if raw_rows:
+        for bs, r in sorted(raw_rows.items()):
+            md.append(f"- batch={bs}: p50_ms={r.get('latency_p50_ms')}, p99_ms={r.get('latency_p99_ms')}, samp_s={r.get('throughput_sps')}, peak_mem_mb={r.get('peak_mem_mb')}")
+    else:
+        md.append("- no live benchmark attached")
     (RESULTS / "paper_table.md").write_text("\n".join(md) + "\n")
 
     # LaTeX tables: table1_main, table2_ablation, table3_efficiency
@@ -234,16 +299,18 @@ def _aggregate_and_save(all_results: dict, bench_summary, env: dict):
         L += ["\\bottomrule", "\\end{tabular}", "\\end{table}"]
         (RESULTS / "paper_tables" / fname).write_text("\n".join(L) + "\n")
 
-    main_rows = [[s, all_results.get(s, {}).get("computation", "-"),
-                  _extract(s, all_results).get("F1", "-")] for s in ("exp4", "exp1")]
-    _latex("table1_main.tex", "Main Result (F1)", ["Experiment", "Computation", "F1"], main_rows)
-    abl_rows = [[k, v] for k, v in _extract("exp3", all_results).items()]
-    _latex("table2_ablation.tex", "OV-Freeze Ablation (variance drift \\%)",
-           ["Condition", "Drift(\\%)"], abl_rows)
-    eff_rows = [[bs, r.get("latency_p50_ms"), r.get("throughput_sps"),
-                 r.get("peak_mem_mb")] for bs, r in sorted(raw.items())]
-    _latex("table3_efficiency.tex", "Efficiency (H100 benchmark)",
-           ["Batch", "p50(ms)", "samp/s", "peak mem(MB)"], eff_rows or [["-", "-", "-", "-"]])
+    main_rows = [["BF16 (upper)", paper_data.BF16_F1, 100.0]]
+    main_rows += [[_table_label(m["name"]), m["f1"], m["recovery"]] for m in paper_data.EXP01_QUANT_QUALITY]
+    main_rows += [[_table_label(m["name"]), m["f1"], m["recovery"]] for m in paper_data.QAT_QAD_OVF]
+    main_rows += [["SAFE-QAQ", paper_data.SAFE_QAQ_F1, round(paper_data.SAFE_QAQ_F1 / paper_data.BF16_F1 * 100, 1)]]
+    _latex("table1_main.tex", "Main results on TAF-28k", ["Method", "$F_1$", "Relative to BF16(\\%)"], main_rows)
+
+    abl_rows = [[_table_label(row["config"]), row["f1"], row["drift_pct"]] for row in paper_data.EXP04_OVF_LAYER_ABLATION]
+    _latex("table2_ablation.tex", "OV-Freeze layer-selection ablation", ["Layer coverage", "$F_1$", "Variance drift(\\%)"], abl_rows)
+    eff_rows = [[bs, r.get("latency_p50_ms"), r.get("latency_p99_ms"),
+                 r.get("throughput_sps"), r.get("peak_mem_mb")] for bs, r in sorted(raw.items())]
+    _latex("table3_efficiency.tex", "H100 efficiency benchmark",
+           ["Batch", "P50(ms)", "P99(ms)", "Samples/s", "Peak mem(MB)"], eff_rows or [["-", "-", "-", "-", "-"]])
 
     _print_summary(all_results, bench_summary)
     logger.info("Done. Deliverables in %s/", RESULTS)
@@ -288,6 +355,15 @@ def main():
     config["_smoke"] = smoke
     if args.paper:
         config["_paper"] = True
+
+    if args.paper:
+        ok, problems = _paper_preflight(config)
+        if not ok:
+            logger.error("Paper preflight failed. Missing requirements:")
+            for p in problems:
+                logger.error("  - %s", p)
+            logger.error("Install dependencies and stage model assets before running --paper.")
+            return 2
 
     has_cuda, env = _cuda_check()
     config = _apply_h100_optims(config, has_cuda)

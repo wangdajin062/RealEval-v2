@@ -1,0 +1,91 @@
+{
+  "generated_at": "2026-06-04 20:58:44",
+  "datasets": {
+    "TAF-28k": {
+      "full_name": "TeleAntiFraud-28k",
+      "description": "首个面向电信反诈的开源音频-文本双模态慢思考数据集",
+      "samples": 28511,
+      "audio_hours": 307,
+      "tasks": [
+        "场景分类",
+        "欺诈检测",
+        "欺诈类型分类"
+      ],
+      "splits": "8:1:1 (train:val:test)",
+      "sources": [
+        {
+          "name": "HuggingFace",
+          "url": "https://huggingface.co/datasets/JimmyMa99/TeleAntiFraud"
+        },
+        {
+          "name": "ModelScope",
+          "url": "https://www.modelscope.cn/datasets/JimmyMa99/TeleAntiFraud"
+        },
+        {
+          "name": "hf-mirror (国内镜像)",
+          "url": "https://hf-mirror.com/datasets/JimmyMa99/TeleAntiFraud"
+        },
+        {
+          "name": "GitHub",
+          "url": "https://github.com/JimmyMa99/TeleAntiFraud"
+        }
+      ],
+      "paper": "Ma et al., ACM MM 2025",
+      "arxiv": "2503.24115",
+      "bib_key": "1",
+      "download_status": "downloaded",
+      "local_path": "data/TAF28k/",
+      "local_samples": "4000 train + 400 test"
+    },
+    "ChiFraud": {
+      "full_name": "ChiFraud (SmsSpam-CN)",
+      "description": "长周期中文网络欺诈文本基准数据集",
+      "samples": 411934,
+      "fraud_texts": 59106,
+      "normal_texts": 352328,
+      "fraud_categories": 11,
+      "collection_period": "2022-2023 (12 months)",
+      "sources": [
+        {
+          "name": "GitHub",
+          "url": "https://github.com/xuemingxxx/ChiFraud"
+        },
+        {
+          "name": "ACL Anthology",
+          "url": "https://aclanthology.org/2025.coling-main.398/"
+        }
+      ],
+      "paper": "Tang et al., COLING 2025",
+      "bib_key": "chifraud",
+      "download_status": "downloaded",
+      "local_path": "database/ChiFraud/",
+      "local_size": "~96.8 MB",
+      "files": [
+        "dataset/ChiFraud_train.csv",
+        "dataset/ChiFraud_t2022.csv",
+        "dataset/ChiFraud_t2023.csv"
+      ]
+    },
+    "AdvFraud-3k": {
+      "full_name": "AdvFraud-3k",
+      "description": "自建对抗攻击测试集",
+      "samples": 3000,
+      "rewritten_from_taf28k": 1000,
+      "newly_written": 2000,
+      "adversarial_strategies": 8,
+      "annotators": "3 名独立标注 + 1 名资深复核",
+      "agreement": "Cohen's κ = 0.87",
+      "availability": "NON-PUBLIC",
+      "reason": "包含对抗攻击样本，由所在机构数据合规审查",
+      "note": "构建方法见 AdvFraud3k_construction_guide.json",
+      "paper_section": "§4.1",
+      "bib_key": "in-house"
+    }
+  },
+  "download_commands": {
+    "taf28k_hf": "huggingface-cli download JimmyMa99/TeleAntiFraud --local-dir database/TAF28k",
+    "taf28k_python": "from datasets import load_dataset; ds = load_dataset('JimmyMa99/TeleAntiFraud')",
+    "taf28k_modelscope": "from modelscope.msdatasets import MsDataset; ds = MsDataset.load('JimmyMa99/TeleAntiFraud')",
+    "chifraud_git": "git clone https://github.com/xuemingxxx/ChiFraud.git database/ChiFraud"
+  }
+}

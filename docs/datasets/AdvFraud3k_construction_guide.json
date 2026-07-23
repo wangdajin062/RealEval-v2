@@ -1,0 +1,22 @@
+{
+  "dataset": "AdvFraud-3k",
+  "availability": "非公开 (自建对抗数据集)",
+  "paper_section": "§4.1 实验设置与数据基准",
+  "construction_method": {
+    "step1": "从 TAF-28k 测试集随机抽取 1,000 条欺诈样本",
+    "step2": "由 3 名独立标注员进行对抗式改写",
+    "step3": "第 4 名资深标注员复核 (Cohen's κ = 0.87)",
+    "step4": "领域专家撰写 2,000 条新型欺诈话术"
+  },
+  "adversarial_strategies": [
+    "同义词扰动 (Synonym Perturbation)",
+    "句式拓扑重排 (Syntactic Reordering)",
+    "方言特征转换 (Dialect Feature Transformation)",
+    "隐喻表达 (Metaphorical Expression)",
+    "语气弱化 (Tone Attenuation)",
+    "关键信息替换 (Key Info Substitution)",
+    "长句拆分 (Long Sentence Splitting)",
+    "跨领域话术注入 (Cross-domain Jargon Injection)"
+  ],
+  "note": "该数据集仅用于测试评估，不参与训练。如需复现，请参照上述方法从 TAF-28k 构建。"
+}

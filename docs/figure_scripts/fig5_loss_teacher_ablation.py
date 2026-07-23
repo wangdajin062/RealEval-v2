@@ -22,6 +22,8 @@ import paper_style as ps
 from paper_data import EXP03_LOSS_ABLATION, EXP09_TEACHER
 import os
 
+LIVE_MODE = os.environ.get("PAPER_DATA_USE_LIVE", "0") == "1"
+
 fig, (axL, axR) = plt.subplots(1, 2, figsize=(7.6, 3.5),
                                gridspec_kw={"wspace": 0.47})
 
@@ -51,12 +53,13 @@ axK = axL.twinx()
 axK.bar(x + w / 2, kl, w, color=ps.PALETTE["secondary"], edgecolor="black",
         lw=0.5, alpha=0.85, label="KL")
 axK.set_ylabel("KL divergence to BF16 teacher", color=ps.PALETTE["secondary"])
-axK.set_ylim(0, 0.37)
+kl_top = 0.37 if not LIVE_MODE else max(0.37, max(kl) * 1.12)
+axK.set_ylim(0, kl_top)
 axK.tick_params(axis="y", colors=ps.PALETTE["secondary"])
 axK.grid(False)
 axK.spines["top"].set_visible(False)
 for xi, v in zip(x, kl):
-    axK.text(xi + w / 2, v + 0.006, f"{v:.3f}", ha="center", fontsize=6.6,
+        axK.text(xi + w / 2, min(v + max(0.006, kl_top * 0.02), kl_top * 0.985), f"{v:.3f}", ha="center", fontsize=6.6,
              color=ps.PALETTE["secondary"])
 axL.annotate("best $F_1$ &\nlowest KL", xy=(0 - w / 2, 0.916 + errs[0]),
              xytext=(0.55, 0.938), fontsize=7, color=ps.PALETTE["highlight"],

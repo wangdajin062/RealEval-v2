@@ -23,6 +23,8 @@ from paper_data import (
 )
 import os
 
+LIVE_MODE = os.environ.get("PAPER_DATA_USE_LIVE", "0") == "1"
+
 # --- assemble the unified, ordered method list ----------------------------
 # (name, F1, recovery, F1_err, colour-key)
 methods = [("BF16 (upper)", BF16_F1, 100.0, BF16_F1_ERR, "ref")]
@@ -65,7 +67,9 @@ ax1.barh(y, f1s, xerr=errs, color=cols, edgecolor="black", lw=0.5,
          error_kw=dict(ecolor="#333", lw=0.8, capsize=2))
 ax1.set_yticks(y)
 ax1.set_yticklabels(names)
-ax1.set_xlim(0.79, 0.965)
+f1_left = 0.79 if not LIVE_MODE else min(0.79, min(f1s) - 0.01)
+f1_right = 0.965 if not LIVE_MODE else max(0.965, max(f1s) + max(errs) + 0.01)
+ax1.set_xlim(f1_left, f1_right)
 
 ax1.set_title("(a) $F_1$ across all methods", weight="bold")
 ax1.title.set_position((0.35, 1.0))
@@ -73,7 +77,7 @@ ax1.axvline(BF16_F1, color="#555", ls="--", lw=0.9)
 ax1.text(BF16_F1 + 0.002, len(methods) / 2, "BF16 ceiling", rotation=90,
          ha="left", va="center", fontsize=7, color="#888")
 for yi, f1, e in zip(y, f1s, errs):
-    ax1.text(f1 + (e or 0) + 0.004, yi, f"{f1:.3f}", va="center", fontsize=7.2)
+    ax1.text(min(f1 + (e or 0) + 0.004, f1_right - 0.01), yi, f"{f1:.3f}", va="center", fontsize=7.2)
 ax1.grid(axis="x", alpha=0.25)
 ax1.grid(axis="y", visible=False)
 
@@ -85,7 +89,9 @@ colsb = [color_map[m[4]] for m in mb]
 ax2.barh(yb, recs, color=colsb, edgecolor="black", lw=0.5)
 ax2.set_yticks(yb)
 ax2.set_yticklabels([short[m[0]] for m in mb])
-ax2.set_xlim(89, 102)
+rec_left = 89 if not LIVE_MODE else min(89, min(recs) - 1.0)
+rec_right = 102 if not LIVE_MODE else max(102, max(recs) + 1.8)
+ax2.set_xlim(rec_left, rec_right)
 
 ax2.set_title("(b) Accuracy recovery", weight="bold")
 ax2.title.set_position((0.4, 1.0))
@@ -93,7 +99,7 @@ ax2.axvline(99.0, color=ps.PALETTE["highlight"], ls=":", lw=1.0)
 ax2.text(99.8, len(mb) / 2.0, "99% target", rotation=90,
          ha="right", va="center", fontsize=7, color=ps.PALETTE["highlight"])
 for yi, r in zip(yb, recs):
-    ax2.text(r + 0.15, yi, f"{r:.1f}", va="center", fontsize=7.2)
+    ax2.text(min(r + 0.15, rec_right - 0.6), yi, f"{r:.1f}", va="center", fontsize=7.2)
 ax2.grid(axis="x", alpha=0.25)
 ax2.grid(axis="y", visible=False)
 

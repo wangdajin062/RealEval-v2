@@ -21,6 +21,8 @@ from paper_data import (LOSS_PLATEAU, LOSS_CONVERGED, OVF_ACTIVATION_STEP,
                         TOTAL_STEPS, SNR_RANGE)
 import os
 
+LIVE_MODE = os.environ.get("PAPER_DATA_USE_LIVE", "0") == "1"
+
 rng = np.random.RandomState(11)
 steps = np.arange(0, TOTAL_STEPS + 1)
 
@@ -43,6 +45,11 @@ loss += rng.normal(0, 0.0009, size=loss.shape)
 lr = 1e-5 * 0.5 * (1 + np.cos(np.pi * steps / TOTAL_STEPS))
 lr[:warm] = 1e-5 * steps[:warm] / warm    # linear warm-up
 
+drop_ratio = (LOSS_PLATEAU / max(LOSS_CONVERGED, 1e-12)) if LOSS_CONVERGED > 0 else None
+drop_label = (f"KL drop {drop_ratio:.2f}$\\times$\n({LOSS_PLATEAU:.3f} $\\to$ {LOSS_CONVERGED:.3f})"
+              if drop_ratio is not None else
+              f"KL drop\n({LOSS_PLATEAU:.3f} $\\to$ {LOSS_CONVERGED:.3f})")
+
 fig, (ax_a, ax_b) = plt.subplots(2, 1, figsize=(7.0, 4.5), sharex=True,
                                  gridspec_kw={"height_ratios": [2.2, 1],
                                               "hspace": 0.32})
@@ -50,7 +57,8 @@ fig, (ax_a, ax_b) = plt.subplots(2, 1, figsize=(7.0, 4.5), sharex=True,
 ax_a.plot(steps, loss, color=ps.PALETTE["primary"], lw=1.3,
           label="KL divergence loss")
 ax_a.set_ylabel("KL divergence loss")
-ax_a.set_ylim(0, 0.055)
+ymax_a = max(0.055, float(loss.max()) * 1.12)
+ax_a.set_ylim(0, ymax_a)
 ax_a.set_title("(a) KL divergence convergence under OV-Freeze activation",
                weight="bold")
 ax_a.axvline(OVF_ACTIVATION_STEP, color=ps.PALETTE["highlight"], ls="--", lw=1.0)
@@ -58,17 +66,17 @@ ax_a.axvspan(OVF_ACTIVATION_STEP, TOTAL_STEPS, color=ps.PALETTE["highlight"],
              alpha=0.06)
 ax_a.annotate(f"OV-Freeze ON\n(step {OVF_ACTIVATION_STEP}, last 30%)",
               xy=(OVF_ACTIVATION_STEP, LOSS_PLATEAU),
-              xytext=(OVF_ACTIVATION_STEP - 420, 0.03),
+              xytext=(OVF_ACTIVATION_STEP - 420, min(ymax_a * 0.55, max(LOSS_PLATEAU * 0.7, ymax_a * 0.18))),
               fontsize=7.5, color=ps.PALETTE["highlight"],
               arrowprops=dict(arrowstyle="->", color=ps.PALETTE["highlight"], lw=1.0))
-ax_a.text(TOTAL_STEPS - 30, LOSS_CONVERGED + -0.008,
+ax_a.text(TOTAL_STEPS - 30, max(ymax_a * 0.03, LOSS_CONVERGED + ymax_a * 0.02),
           f"converged\n(loss $\\approx$ {LOSS_CONVERGED:.3f})", ha="right",
           fontsize=7.5, color=ps.PALETTE["primary"])
-ax_a.text(700, LOSS_PLATEAU + 0.004,
+ax_a.text(700, min(ymax_a * 0.96, LOSS_PLATEAU + ymax_a * 0.03),
           f"plateau (loss $\\approx$ {LOSS_PLATEAU:.3f})", ha="center",
           fontsize=7.5, color="#555")
-ax_a.text(OVF_ACTIVATION_STEP + 160, 0.0255,
-          "KL drop 2.76$\\times$\n(0.045 $\\to$ 0.016)", fontsize=7.5,
+ax_a.text(OVF_ACTIVATION_STEP + 160, ymax_a * 0.46,
+          drop_label, fontsize=7.5,
           color=ps.PALETTE["secondary"], weight="bold")
 
 ax_lr = ax_a.twinx()

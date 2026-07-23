@@ -342,6 +342,26 @@ class TestRealBackend:
         with pytest.raises(AssetsUnavailable):
             run_paper_safe(False, {}, fail)
 
+    def test_run_paper_safe_legacy_two_arg_form(self):
+        from realeval.real_backend import run_paper_safe
+
+        def ok(_c):
+            return {"ok": True}
+
+        result = run_paper_safe(True, ok)
+        assert result == {"ok": True}
+
+    def test_run_paper_safe_legacy_misordered_config_and_fn(self):
+        from realeval.real_backend import run_paper_safe
+
+        cfg = {"_smoke": True, "token": 7}
+
+        def ok(c):
+            return {"token": c.get("token")}
+
+        result = run_paper_safe(cfg, ok)
+        assert result == {"token": 7}
+
 
 class TestEnvReport:
     def test_output_root(self):

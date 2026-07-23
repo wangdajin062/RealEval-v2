@@ -23,31 +23,12 @@ matplotlib.use("Agg")
 import matplotlib.pyplot as plt
 import numpy as np
 import paper_style as ps  # shared journal-grade styling (font, palette, dpi)
+from paper_data import EXP12_REVISION_ABLATIONS
 
-# --------------------------------------------------------------------------- #
-# SINGLE SOURCE OF TRUTH  (must equal the values in paper1_en_v9.tex)
-# --------------------------------------------------------------------------- #
-DATA = {
-    # (a) Quantization-scheme ablation on TAF-28k (F1)
-    "quant": {
-        "labels": ["Homogeneous\nINT4", "Heterogeneous\n(NVFP4+Q4_K_M)"],
-        "f1":     [0.915, 0.923],
-        "bf16_ref": 0.931,        # BF16 baseline reference line
-        "delta":  0.008,          # +0.008, p<0.05
-    },
-    # (b) AdvFraud-3k robustness: curated 517-subset vs full 3000-pool (QAD+OVF F1)
-    "advfraud": {
-        "labels": ["Full pool\n(3,000)", "Curated subset\n(517)"],
-        "f1":     [0.841, 0.875],
-        "bf16_matched": 0.882,    # matched AdvFraud BF16 baseline (curated)
-    },
-    # (c) epsilon-LDP privacy-utility trade-off (eps=1.5, sigma=1.0, delta=1e-5)
-    "ldp": {
-        "labels":   ["No LDP\n(main results)", "$\\epsilon$-LDP\n($\\epsilon$=1.5)"],
-        "f1":       [0.923, 0.902],     # -0.021 absolute
-        "latency":  [268.0, 271.0],     # P50 ms, +~3 ms overhead
-    },
-}
+LIVE_MODE = os.environ.get("PAPER_DATA_USE_LIVE", "0") == "1"
+
+# Keep plotting-field names unchanged; values now come from paper_data bridge.
+DATA = EXP12_REVISION_ABLATIONS
 
 # --------------------------------------------------------------------------- #
 # Colour aliases from the shared paper_style palette
@@ -98,7 +79,9 @@ def main():
     _annotate_bars(ax, bars)
     ax.set_xticks(x)
     ax.set_xticklabels(a["labels"])
-    ax.set_ylim(0.80, 0.89)
+    adv_low = 0.80 if not LIVE_MODE else min(0.80, min(a["f1"]) - 0.01)
+    adv_high = 0.89 if not LIVE_MODE else max(0.89, max(a["f1"] + [a["bf16_matched"]]) + 0.01)
+    ax.set_ylim(adv_low, adv_high)
     ax.set_ylabel(r"AdvFraud-3k $F_1$ (QAD+OVF)")
     ax.set_title("(b) AdvFraud-3k: curated vs full pool", weight="bold")
     ax.legend(loc="lower left", frameon=False)

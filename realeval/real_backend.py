@@ -28,9 +28,33 @@ def require_assets(cond, msg):
 _require = require_assets
 
 
-def run_paper_safe(smoke, config, paper_fn):
-    """Run a paper-path function safely: if it raises AssetsUnavailable and smoke=True, return None
-    (caller falls through to the smoke path); if not smoke, re-raise. Functional form of paper_ready."""
+def run_paper_safe(smoke, config_or_paper_fn=None, paper_fn=None):
+    """Run a paper-path function safely.
+
+    Preferred call form:
+        run_paper_safe(smoke, config, paper_fn)
+
+    Backward-compatible legacy call form:
+        run_paper_safe(smoke, paper_fn)
+
+    Backward-compatible misordered form (seen in stale copies):
+        run_paper_safe(config, paper_fn)
+    """
+    # Misordered legacy form: run_paper_safe(config, paper_fn)
+    if isinstance(smoke, dict) and callable(config_or_paper_fn) and paper_fn is None:
+        config = smoke
+        paper_fn = config_or_paper_fn
+        smoke = bool(config.get("_smoke", False))
+    elif paper_fn is None:
+        # Legacy form: run_paper_safe(smoke, paper_fn)
+        if callable(config_or_paper_fn):
+            config = {}
+            paper_fn = config_or_paper_fn
+        else:
+            raise TypeError("run_paper_safe() missing required paper_fn callable")
+    else:
+        config = config_or_paper_fn if isinstance(config_or_paper_fn, dict) else {}
+
     try:
         return paper_fn(config)
     except AssetsUnavailable:
